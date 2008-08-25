@@ -7,7 +7,7 @@
  * Copyright (c) 2002-2008, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/utils/fmgr/funcapi.c,v 1.38 2008/02/29 02:49:39 neilc Exp $
+ *	  $PostgreSQL: pgsql/src/backend/utils/fmgr/funcapi.c,v 1.42 2008/08/25 22:42:34 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -19,8 +19,8 @@
 #include "catalog/pg_type.h"
 #include "executor/executor.h"          /* ReturnSetInfo, RegisterExprContextCallback */
 #include "funcapi.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parse_coerce.h"
-#include "parser/parse_expr.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
