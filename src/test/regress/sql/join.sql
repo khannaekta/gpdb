@@ -560,3 +560,97 @@ from int8_tbl t1 left join
   (select q1, case when q2=1 then 1 else q2 end as q2 from int8_tbl) t2
   on (t1.q2 = t2.q1)
 group by t1.q2 order by 1;
+
+--
+-- test incorrect failure to NULL pulled-up subexpressions
+--
+begin;
+
+create temp table a (
+     code char not null,
+     constraint a_pk primary key (code)
+);
+create temp table b (
+     a char not null,
+     num integer not null,
+     constraint b_pk primary key (a, num)
+);
+create temp table c (
+     name char not null,
+     a char,
+     constraint c_pk primary key (name)
+);
+
+insert into a (code) values ('p');
+insert into a (code) values ('q');
+insert into b (a, num) values ('p', 1);
+insert into b (a, num) values ('p', 2);
+insert into c (name, a) values ('A', 'p');
+insert into c (name, a) values ('B', 'q');
+insert into c (name, a) values ('C', null);
+
+select c.name, ss.code, ss.b_cnt, ss.const
+from c left join
+  (select a.code, coalesce(b_grp.cnt, 0) as b_cnt, -1 as const
+   from a left join
+     (select count(1) as cnt, b.a from b group by b.a) as b_grp
+     on a.code = b_grp.a
+  ) as ss
+  on (c.a = ss.code)
+order by c.name;
+
+rollback;
+
+--
+-- test incorrect handling of placeholders that only appear in targetlists,
+-- per bug #6154
+--
+SELECT * FROM
+( SELECT 1 as key1 ) sub1
+LEFT JOIN
+( SELECT sub3.key3, sub4.value2, COALESCE(sub4.value2, 66) as value3 FROM
+    ( SELECT 1 as key3 ) sub3
+    LEFT JOIN
+    ( SELECT sub5.key5, COALESCE(sub6.value1, 1) as value2 FROM
+        ( SELECT 1 as key5 ) sub5
+        LEFT JOIN
+        ( SELECT 2 as key6, 42 as value1 ) sub6
+        ON sub5.key5 = sub6.key6
+    ) sub4
+    ON sub4.key5 = sub3.key3
+) sub2
+ON sub1.key1 = sub2.key3;
+
+-- test the path using join aliases, too
+SELECT * FROM
+( SELECT 1 as key1 ) sub1
+LEFT JOIN
+( SELECT sub3.key3, value2, COALESCE(value2, 66) as value3 FROM
+    ( SELECT 1 as key3 ) sub3
+    LEFT JOIN
+    ( SELECT sub5.key5, COALESCE(sub6.value1, 1) as value2 FROM
+        ( SELECT 1 as key5 ) sub5
+        LEFT JOIN
+        ( SELECT 2 as key6, 42 as value1 ) sub6
+        ON sub5.key5 = sub6.key6
+    ) sub4
+    ON sub4.key5 = sub3.key3
+) sub2
+ON sub1.key1 = sub2.key3;
+
+--
+-- test case where a PlaceHolderVar is propagated into a subquery
+--
+select * from
+  int8_tbl t1 left join
+  (select q1 as x, 42 as y from int8_tbl t2) ss
+  on t1.q2 = ss.x
+where
+  1 = (select 1 from int8_tbl t3 where ss.y is not null limit 1)
+order by 1,2;
+
+--
+-- test the corner cases FULL JOIN ON TRUE and FULL JOIN ON FALSE
+--
+select * from int4_tbl a full join int4_tbl b on true;
+select * from int4_tbl a full join int4_tbl b on false;
