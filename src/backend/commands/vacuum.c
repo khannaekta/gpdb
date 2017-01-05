@@ -256,7 +256,7 @@ static int VacFullInitialStatsSize = 0;
 static BufferAccessStrategy vac_strategy;
 
 /* non-export function prototypes */
-static List *get_rel_oids(List *relids, VacuumStmt *vacstmt, const char *stmttype);
+static List *get_rel_oids(List *relids, VacuumStmt *vacstmt, bool Stmt);
 static void vac_truncate_clog(TransactionId frozenXID);
 static void vacuum_rel(Relation onerel, VacuumStmt *vacstmt, LOCKMODE lmode, List *updated_stats,
 		   bool for_wraparound);
@@ -351,7 +351,8 @@ vacuum(VacuumStmt *vacstmt, List *relids,
 	volatile bool all_rels,
 				in_outer_xact,
 				use_own_xacts;
-	List	   *relations;
+	List	   *vacuum_relations;
+    List	   *analyze_relations;
 
 	if (vacstmt->vacuum && vacstmt->rootonly)
 		ereport(ERROR,
@@ -428,7 +429,10 @@ vacuum(VacuumStmt *vacstmt, List *relids,
 	 * Build list of relations to process, unless caller gave us one. (If we
 	 * build one, we put it in vac_context for safekeeping.)
 	 */
-	relations = get_rel_oids(relids, vacstmt, stmttype);
+    if (vacstmt->vacuum)
+        vacuum_relations = get_rel_oids(relids, vacstmt, true /* Requesting relations for VACUUM */);
+    if (vacstmt->analyze)
+        analyze_relations = get_rel_oids(relids, vacstmt, false /* Requesting relations for ANALYZE */);
 
 	/*
 	 * Decide whether we need to start/commit our own transactions.
@@ -453,7 +457,7 @@ vacuum(VacuumStmt *vacstmt, List *relids,
 			use_own_xacts = true;
 		else if (in_outer_xact)
 			use_own_xacts = false;
-		else if (list_length(relations) > 1)
+		else if (list_length(analyze_relations) > 1)
 			use_own_xacts = true;
 		else
 			use_own_xacts = false;
@@ -504,17 +508,22 @@ vacuum(VacuumStmt *vacstmt, List *relids,
 		/*
 		 * Loop to process each selected relation.
 		 */
-		foreach(cur, relations)
+		if (vacstmt->vacuum)
 		{
-			Oid			relid = lfirst_oid(cur);
-
-			if (vacstmt->vacuum)
-				vacuumStatement_Relation(vacstmt, relid, relations, bstrategy, for_wraparound, isTopLevel);
-
-			if (vacstmt->analyze)
+			foreach(cur, vacuum_relations)
 			{
-				MemoryContext old_context = NULL;
+				Oid			relid = lfirst_oid(cur);
+				vacuumStatement_Relation(vacstmt, relid, vacuum_relations, bstrategy, for_wraparound, isTopLevel);
+			}
+		}
 
+		if (vacstmt->analyze)
+		{
+			foreach(cur, analyze_relations)
+			{
+				Oid			relid = lfirst_oid(cur);
+				MemoryContext old_context = NULL;
+				
 				/*
 				 * If using separate xacts, start one for analyze. Otherwise,
 				 * we can use the outer transaction, but we still need to call
@@ -530,9 +539,7 @@ vacuum(VacuumStmt *vacstmt, List *relids,
 				}
 				else
 					old_context = MemoryContextSwitchTo(anl_context);
-
 				analyze_rel(relid, vacstmt, vac_strategy);
-
 				if (use_own_xacts)
 					CommitTransactionCommand();
 				else
@@ -1373,97 +1380,148 @@ vacuumStatement_Relation(VacuumStmt *vacstmt, Oid relid,
  * per-relation transactions.
  */
 static List *
-get_rel_oids(List *relids, VacuumStmt *vacstmt, const char *stmttype)
+get_rel_oids(List *relids, VacuumStmt *vacstmt, bool Stmt)
 {
-	List	   *oid_list = NIL;
-	MemoryContext oldcontext;
+    List	   *oid_list = NIL;
+    MemoryContext oldcontext;
 
 	/* List supplied by VACUUM's caller? */
 	if (relids)
 		return relids;
-
-	if (vacstmt->relation)
-	{
-		/* Process a specific relation */
-		Oid			relid;
-		List	   *prels = NIL;
-
-		relid = RangeVarGetRelid(vacstmt->relation, false);
-
-		if (rel_is_partitioned(relid))
-		{
-			PartitionNode *pn;
-
-			pn = get_parts(relid, 0, 0, false, true /*includesubparts*/);
-
-			prels = all_partition_relids(pn);
-		}
-		else if (rel_is_child_partition(relid))
-		{
-			/* get my children */
-			prels = find_all_inheritors(relid);
-		}
-
-		/* Make a relation list entry for this guy */
-		oldcontext = MemoryContextSwitchTo(vac_context);
-		oid_list = lappend_oid(oid_list, relid);
-		oid_list = list_concat_unique_oid(oid_list, prels);
-		MemoryContextSwitchTo(oldcontext);
-	}
-	else
-	{
-		/* Process all plain relations listed in pg_class */
-		Relation	pgclass;
-		HeapScanDesc scan;
-		HeapTuple	tuple;
-		ScanKeyData key;
-
-		ScanKeyInit(&key,
-					Anum_pg_class_relkind,
-					BTEqualStrategyNumber, F_CHAREQ,
-					CharGetDatum(RELKIND_RELATION));
-
-		pgclass = heap_open(RelationRelationId, AccessShareLock);
-
-		scan = heap_beginscan(pgclass, SnapshotNow, 1, &key);
-
-		while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
-		{
-			Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
-
-			/*
-			 * Don't include non-vacuum-able relations:
-			 *   - External tables
-			 *   - Foreign tables
-			 *   - etc.
-			 */
-			if (classForm->relkind == RELKIND_RELATION && (
-					classForm->relstorage == RELSTORAGE_EXTERNAL ||
-					classForm->relstorage == RELSTORAGE_FOREIGN  ||
-					classForm->relstorage == RELSTORAGE_VIRTUAL))
-				continue;
-
-			/* Skip persistent tables for Vacuum full. Vacuum full could turn
-			 * out dangerous as it has potential to move tuples around causing
-			 * the TIDs for tuples to change, which violates its reference from
-			 * gp_relation_node. One scenario where this can happen is zero-page
-			 * due to failure after page extension but before page initialization.
-			 */
-			 if (vacstmt->full &&
-				 GpPersistent_IsPersistentRelation(HeapTupleGetOid(tuple)))
-				 continue;
-
-			/* Make a relation list entry for this guy */
-			oldcontext = MemoryContextSwitchTo(vac_context);
-			oid_list = lappend_oid(oid_list, HeapTupleGetOid(tuple));
-			MemoryContextSwitchTo(oldcontext);
-		}
-
-		heap_endscan(scan);
-		heap_close(pgclass, AccessShareLock);
-	}
-
-	return oid_list;
+	
+    if (vacstmt->relation)
+    {
+        if (Stmt)
+        {
+            /* Process a specific relation */
+            Oid			relid;
+            List	   *prels = NIL;
+            
+            relid = RangeVarGetRelid(vacstmt->relation, false);
+            
+            if (rel_is_partitioned(relid))
+            {
+                PartitionNode *pn;
+                
+                pn = get_parts(relid, 0, 0, false, true /*includesubparts*/);
+                
+                prels = all_partition_relids(pn);
+            }
+            else if (rel_is_child_partition(relid))
+            {
+                /* get my children */
+                prels = find_all_inheritors(relid);
+            }
+            
+            /* Make a relation list entry for this guy */
+            oldcontext = MemoryContextSwitchTo(vac_context);
+            oid_list = lappend_oid(oid_list, relid);
+            oid_list = list_concat_unique_oid(oid_list, prels);
+            MemoryContextSwitchTo(oldcontext);
+        }
+        else
+        {
+            /**
+             * ANALYZE one relation (optionally, a list of columns).
+             */
+            Oid relationOid = InvalidOid;
+            Assert(relids == NIL);
+            Assert(vacstmt->relation != NULL);
+            relationOid = RangeVarGetRelid(vacstmt->relation, false);
+            PartStatus ps = rel_part_status(relationOid);
+            
+            if (ps != PART_STATUS_ROOT && vacstmt->rootonly)
+            {
+                ereport(WARNING,
+                        (errmsg("skipping \"%s\" --- cannot analyze a non-root partition using ANALYZE ROOTPARTITION",
+                                get_rel_name(relationOid))));
+            }
+            else if (ps == PART_STATUS_ROOT)
+            {
+                PartitionNode *pn = get_parts(relationOid, 0 /*level*/ ,
+                                              0 /*parent*/, false /* inctemplate */, true /*includesubparts*/);
+                Assert(pn);
+                if (!vacstmt->rootonly)
+                {
+                    oid_list = all_leaf_partition_relids(pn); /* all leaves */
+                }
+				oid_list = lappend_oid(oid_list, relationOid); /* root partition */
+                if (optimizer_analyze_midlevel_partition)
+                {
+                    oid_list = list_concat(oid_list, all_interior_partition_relids(pn)); /* interior partitions */
+                }
+            }
+            else if (ps == PART_STATUS_INTERIOR) /* analyze an interior partition directly */
+            {
+                /* disable analyzing mid-level partitions directly since the users are encouraged
+                 * to work with the root partition only. To gather stats on mid-level partitions
+                 * (for Orca's use), the user should run ANALYZE or ANALYZE ROOTPARTITION on the
+                 * root level.
+                 */
+                ereport(WARNING,
+                        (errmsg("skipping \"%s\" --- cannot analyze a mid-level partition. "
+                                "Please run ANALYZE on the root partition table.",
+                                get_rel_name(relationOid))));
+            }
+            else
+            {
+                oid_list = list_make1_oid(relationOid);
+            }
+        }
+    }
+    else
+    {
+        /* Process all plain relations listed in pg_class */
+        Relation	pgclass;
+        HeapScanDesc scan;
+        HeapTuple	tuple;
+        ScanKeyData key;
+        
+        ScanKeyInit(&key,
+                    Anum_pg_class_relkind,
+                    BTEqualStrategyNumber, F_CHAREQ,
+                    CharGetDatum(RELKIND_RELATION));
+        
+        pgclass = heap_open(RelationRelationId, AccessShareLock);
+        
+        scan = heap_beginscan(pgclass, SnapshotNow, 1, &key);
+        
+        while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
+        {
+            Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
+            /*
+             * Don't include non-vacuum-able relations:
+             *   - External tables
+             *   - Foreign tables
+             *   - etc.
+             */
+            if (classForm->relkind == RELKIND_RELATION && (
+                                                           classForm->relstorage == RELSTORAGE_EXTERNAL ||
+                                                           classForm->relstorage == RELSTORAGE_FOREIGN  ||
+                                                           classForm->relstorage == RELSTORAGE_VIRTUAL))
+                continue;
+            
+            /* Skip persistent tables for Vacuum full. Vacuum full could turn
+             * out dangerous as it has potential to move tuples around causing
+             * the TIDs for tuples to change, which violates its reference from
+             * gp_relation_node. One scenario where this can happen is zero-page
+             * due to failure after page extension but before page initialization.
+             */
+            if (vacstmt->full &&
+                GpPersistent_IsPersistentRelation(HeapTupleGetOid(tuple)))
+                continue;
+            
+            /* Make a relation list entry for this guy */
+            oldcontext = MemoryContextSwitchTo(vac_context);
+            oid_list = lappend_oid(oid_list, HeapTupleGetOid(tuple));
+            MemoryContextSwitchTo(oldcontext);
+        }
+        
+        heap_endscan(scan);
+        heap_close(pgclass, AccessShareLock);
+    }
+    
+    return oid_list;
 }
 
 /*
