@@ -51,6 +51,16 @@
 #include "utils/tuplesort.h"
 #include "utils/tuplesort_mk.h"
 
+/*
+ * To avoid consuming too much memory during analysis and/or too much space
+ * in the resulting pg_statistic rows, we ignore varlena datums that are wider
+ * than WIDTH_THRESHOLD (after detoasting!).  This is legitimate for MCV
+ * and distinct-value calculations since a wide value is unlikely to be
+ * duplicated at all, much less be a most-common value.  For the same reason,
+ * ignoring wide values will not affect our estimates of histogram bin
+ * boundaries very much.
+ */
+#define WIDTH_THRESHOLD  1024
 
 /* Data structure for Algorithm S from Knuth 3.4.2 */
 typedef struct
@@ -1384,18 +1394,71 @@ acquire_sample_rows_by_query(Relation onerel, int nattrs, VacAttrStats **attrsta
 	tableName = RelationGetRelationName(onerel);
 
 	initStringInfo(&columnStr);
-
+	bool *hasIgnoreCol = (bool *)palloc(sizeof(bool)*nattrs);
 	if (nattrs > 0)
 	{
 		for (i = 0; i < nattrs; i++)
 		{
-			if (i != 0)
+			attrstats[i]->stats_valid = true; /* Initialize stats_valid to true */
+			hasIgnoreCol[i] = false;
+
+			if (attrstats[i]->attr->atttypid == TEXTOID  ||
+				attrstats[i]->attr->atttypid == BYTEAOID ||
+				attrstats[i]->attr->atttypid == VARCHAROID ||
+				attrstats[i]->attr->atttypid == BPCHAROID)
+			{
+				appendStringInfo(&columnStr,
+								 "(case when octet_length(Ta.%s) > %d then NULL else Ta.%s  end) as %s, ",
+								 quote_identifier(NameStr(attrstats[i]->attr->attname)),
+								 analyze_column_width_threshold,
+								 quote_identifier(NameStr(attrstats[i]->attr->attname)),
+								 quote_identifier(NameStr(attrstats[i]->attr->attname)));
+				appendStringInfo(&columnStr,
+								 "(case when octet_length(Ta.%s) > %d then 2 else 1 end)",
+								 quote_identifier(NameStr(attrstats[i]->attr->attname)),
+								 analyze_column_width_threshold);
+				hasIgnoreCol[i] = true;
+			}
+			else if(attrstats[i]->attr->atttypid > 10000){
+				HeapTuple typtuple = SearchSysCacheCopy(TYPEOID,
+														ObjectIdGetDatum(attrstats[i]->attr->atttypid),
+														0, 0, 0);
+				if (!HeapTupleIsValid(typtuple))
+					elog(ERROR, "cache lookup failed for type %u", attrstats[i]->attr->atttypid);
+				Form_pg_type attrtype = (Form_pg_type) GETSTRUCT(typtuple);
+
+				if ( attrtype->typlen < 0)
+				{
+					appendStringInfo(&columnStr,
+									 "(case when pg_column_size(Ta.%s) > %d then NULL else Ta.%s  end) as %s, ",
+									 quote_identifier(NameStr(attrstats[i]->attr->attname)),
+									 WIDTH_THRESHOLD,
+									 quote_identifier(NameStr(attrstats[i]->attr->attname)),
+									 quote_identifier(NameStr(attrstats[i]->attr->attname)));
+					appendStringInfo(&columnStr,
+									 "(case when pg_column_size(Ta.%s) > %d then 2 else 1 end)",
+									 quote_identifier(NameStr(attrstats[i]->attr->attname)),
+									 WIDTH_THRESHOLD);
+
+					hasIgnoreCol[i] = true;
+				}
+			}
+
+			if (!hasIgnoreCol[i])
+			{
+				appendStringInfo(&columnStr, "Ta.%s", quote_identifier(NameStr(attrstats[i]->attr->attname)));
+			}
+
+			if (i != nattrs - 1 )
+			{
 				appendStringInfo(&columnStr, ", ");
-			appendStringInfo(&columnStr, "Ta.%s", quote_identifier(NameStr(attrstats[i]->attr->attname)));
+			}
 		}
 	}
 	else
+	{
 		appendStringInfo(&columnStr, "NULL");
+	}
 
 	/*
 	 * If table is partitioned, we create a sample over all parts.
@@ -1479,16 +1542,43 @@ acquire_sample_rows_by_query(Relation onerel, int nattrs, VacAttrStats **attrsta
 	{
 		HeapTuple	sampletup = SPI_tuptable->vals[i];
 		int			j;
+		int			index = 0;
 
 		for (j = 0; j < nattrs; j++)
 		{
-			int			tupattnum = attrstats[j]->tupattnum;
+			if (!attrstats[j]->stats_valid)
+			{
+				/*
+				 * One of the value for this column is beyond the threshold,
+				 * so ignore sampling the rest of the tuples for this column
+				 * as no stats will be calculated for it.
+				 * Move the index to the next table attribute in sample tuple
+				 */
+				index+=2;
+				continue;
+			}
 
+			int	tupattnum = attrstats[j]->tupattnum;
 			Assert(tupattnum >= 1 && tupattnum <= RelationGetNumberOfAttributes(onerel));
 
-			vals[tupattnum - 1] = heap_getattr(sampletup, j + 1,
+			vals[tupattnum - 1] = heap_getattr(sampletup, index + 1,
 											   SPI_tuptable->tupdesc,
 											   &nulls[tupattnum - 1]);
+			if (hasIgnoreCol[j])
+			{
+				index++; /* Move the index to the supplementary column*/
+				if (nulls[tupattnum - 1])
+				{
+					bool dummyNull = false;
+					Datum dummyVal = heap_getattr(sampletup, index + 1,
+												  SPI_tuptable->tupdesc,
+												  &dummyNull);
+
+					/* If Datum is too large, set stats_valid to false to ensure no stats are collected on it */
+					if (DatumGetInt32(dummyVal) == 2) attrstats[j]->stats_valid = false;
+				}
+			}
+			index++; /* Move index to the next table attribute */
 		}
 		(*rows)[i] = heap_form_tuple(onerel->rd_att, vals, nulls);
 	}
@@ -1712,9 +1802,22 @@ update_attstats(Oid relid, int natts, VacAttrStats **vacattrstats)
 		bool		nulls[Natts_pg_statistic];
 		char		replaces[Natts_pg_statistic];
 
-		/* Ignore attr if we weren't able to collect stats */
+		/* Is there already a pg_statistic tuple for this attribute? */
+		oldtup = SearchSysCache(STATRELATT,
+								ObjectIdGetDatum(relid),
+								Int16GetDatum(stats->attr->attnum),
+								0, 0);
+		
+		/* Ignore attr if we weren't able to collect stats and delete stale stats if they exist */
 		if (!stats->stats_valid)
+		{
+			if (HeapTupleIsValid(oldtup))
+			{
+				simple_heap_delete(sd, &oldtup->t_self);
+				ReleaseSysCache(oldtup);
+			}
 			continue;
+		}
 
 		/*
 		 * Construct a new pg_statistic tuple
@@ -1782,13 +1885,7 @@ update_attstats(Oid relid, int natts, VacAttrStats **vacattrstats)
 				values[i++] = (Datum) 0;
 			}
 		}
-
-		/* Is there already a pg_statistic tuple for this attribute? */
-		oldtup = SearchSysCache(STATRELATT,
-								ObjectIdGetDatum(relid),
-								Int16GetDatum(stats->attr->attnum),
-								0, 0);
-
+		
 		if (HeapTupleIsValid(oldtup))
 		{
 			/* Yes, replace it */
@@ -1858,18 +1955,6 @@ ind_fetch_func(VacAttrStatsP stats, int rownum, bool *isNull)
  *
  *==========================================================================
  */
-
-
-/*
- * To avoid consuming too much memory during analysis and/or too much space
- * in the resulting pg_statistic rows, we ignore varlena datums that are wider
- * than WIDTH_THRESHOLD (after detoasting!).  This is legitimate for MCV
- * and distinct-value calculations since a wide value is unlikely to be
- * duplicated at all, much less be a most-common value.  For the same reason,
- * ignoring wide values will not affect our estimates of histogram bin
- * boundaries very much.
- */
-#define WIDTH_THRESHOLD  1024
 
 #define swapInt(a,b)	do {int _tmp; _tmp=a; a=b; b=_tmp;} while(0)
 #define swapDatum(a,b)	do {Datum _tmp; _tmp=a; a=b; b=_tmp;} while(0)
@@ -2050,7 +2135,10 @@ compute_minimal_stats(VacAttrStatsP stats,
 				track_max;
 	int			num_mcv = stats->attr->attstattarget;
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
-
+	
+	/* If stats are not valid skip collecting stats on this column */
+	if (!stats->stats_valid)
+		return;
 	/*
 	 * We track up to 2*n values for an n-element MCV list; but at least 10
 	 */
@@ -2097,7 +2185,7 @@ compute_minimal_stats(VacAttrStatsP stats,
 			 * avoid repeated detoastings and resultant excess memory usage
 			 * during the comparisons.	Also, check to see if the value is
 			 * excessively wide, and if so don't detoast at all --- just
-			 * ignore the value.
+			 * ignore the column
 			 */
 			if (toast_raw_datum_size(value) > WIDTH_THRESHOLD)
 			{
@@ -2354,7 +2442,11 @@ compute_very_minimal_stats(VacAttrStatsP stats,
 							  stats->attr->attlen == -1);
 	bool		is_varwidth = (!stats->attr->attbyval &&
 							   stats->attr->attlen < 0);
-
+	
+	/* If stats are not valid skip collecting stats on this column */
+	if (!stats->stats_valid)
+		return;
+	
 	for (i = 0; i < samplerows; i++)
 	{
 		Datum		value;
@@ -2458,6 +2550,10 @@ compute_scalar_stats(VacAttrStatsP stats,
 	int			num_mcv = stats->attr->attstattarget;
 	int			num_bins = stats->attr->attstattarget;
 	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
+	
+	/* If stats are not valid skip collecting stats on this column */
+	if (!stats->stats_valid)
+		return;
 
 	values = (ScalarItem *) palloc(samplerows * sizeof(ScalarItem));
 	tupnoLink = (int *) palloc(samplerows * sizeof(int));
@@ -2499,7 +2595,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 			 * avoid repeated detoastings and resultant excess memory usage
 			 * during the comparisons.	Also, check to see if the value is
 			 * excessively wide, and if so don't detoast at all --- just
-			 * ignore the value.
+			 * ignore the column.
 			 */
 			if (toast_raw_datum_size(value) > WIDTH_THRESHOLD)
 			{
@@ -2879,18 +2975,6 @@ compute_scalar_stats(VacAttrStatsP stats,
 		/* We found only nulls; assume the column is entirely null */
 		stats->stats_valid = true;
 		stats->stanullfrac = 1.0;
-		if (is_varwidth)
-			stats->stawidth = 0;	/* "unknown" */
-		else
-			stats->stawidth = stats->attrtype->typlen;
-		stats->stadistinct = 0.0;		/* "unknown" */
-	}
-	else
-	{
-		/* ORCA complains if a column has no statistics whatsoever,
-		 * so store something */
-		stats->stats_valid = true;
-		stats->stanullfrac = (double) null_cnt / (double) samplerows;
 		if (is_varwidth)
 			stats->stawidth = 0;	/* "unknown" */
 		else
