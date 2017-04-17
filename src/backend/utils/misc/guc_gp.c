@@ -2432,7 +2432,12 @@ struct config_bool ConfigureNamesBool_gp[] =
 			NULL
 		},
 		&optimizer,
-		false, assign_optimizer, NULL
+#ifndef USE_ORCA
+		false,
+#else
+		true,
+#endif
+		assign_optimizer, NULL
 	},
 
 	{
