@@ -5040,11 +5040,10 @@ flatten_join_alias_var_optimizer(Query *query, int queryLevel)
 	root->init_plans = NIL;
 
 	root->list_cteplaninfo = NIL;
-	root->in_info_list = NIL;
+	root->join_info_list = NIL;
 	root->append_rel_list = NIL;
 
 	root->hasJoinRTEs = false;
-	root->hasOuterJoins = false;
 
 	ListCell *plc = NULL;
 	foreach(plc, queryNew->rtable)
@@ -5056,7 +5055,6 @@ flatten_join_alias_var_optimizer(Query *query, int queryLevel)
 			root->hasJoinRTEs = true;
 			if (IS_OUTER_JOIN(rte->jointype))
 			{
-				root->hasOuterJoins = true;
 				break;
 			}
 		}
