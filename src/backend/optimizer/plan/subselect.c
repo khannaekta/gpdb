@@ -913,7 +913,7 @@ hash_ok_operator(OpExpr *expr)
  * subselect to the query's rangetable.
  */
 Node *
-convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink)
+convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *sublink)
 {
 	Query	   *parse = root->parse;
 	Query	   *subselect = (Query *) sublink->subselect;
@@ -966,6 +966,9 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink)
 	rtr = makeNode(RangeTblRef);
 	rtr->rtindex = rtindex;
 
+	/* Tell caller to augment the jointree with a reference to the new RTE. */
+	*rtrlist_inout = lappend(*rtrlist_inout, rtr);
+
 	/*
 	 * We assume it's okay to add the pulled-up subquery to the topmost FROM
 	 * list.  This should be all right for ANY clauses appearing in WHERE
@@ -996,6 +999,15 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink)
 	fslink->lefthand = left_varnos;
 	fslink->righthand = bms_make_singleton(rtindex);
 	fslink->quals = quals;
+
+	/*
+	 * 8.4-9.0: MERGE-FIX-ME: We need the logic from old convert_IN_to_join()
+	 * to set try_join_unique appropriately.
+	 * This flag gets copied to SpecialJoinInfo in distribute_sublink_quals_to_rels()
+	 * and is used in cdb_make_rel_dedup_info() to populate join_unique_ininfo in
+	 * CdbRelDedupInfo.
+	 */
+	fslink->try_join_unique = false;
 
 	return (Node *) fslink;
 }
