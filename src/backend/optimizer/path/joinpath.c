@@ -782,11 +782,13 @@ hashclauses_for_join(List *restrictlist,
 	switch (jointype)
 	{
 		case JOIN_INNER:
+		case JOIN_SEMI:
 			isouterjoin = false;
 			break;
 		case JOIN_LEFT:
 		case JOIN_LASJ:
 		case JOIN_LASJ_NOTIN:
+		case JOIN_ANTI:
 			isouterjoin = true;
 			break;
 		default:
@@ -864,7 +866,7 @@ hash_inner_and_outer(PlannerInfo *root,
 	/*
 	 * Hashjoin only supports inner, left, semi, and anti joins.
 	 */
-    Assert(jointype == JOIN_INNER || jointype == JOIN_LEFT || jointype == JOIN_LASJ || jointype == JOIN_LASJ_NOTIN || jointype == JOIN_ANTI);
+    Assert(jointype == JOIN_INNER || jointype == JOIN_LEFT || jointype == JOIN_LASJ || jointype == JOIN_LASJ_NOTIN || jointype == JOIN_ANTI  || jointype == JOIN_SEMI);
     Assert(hashclause_list);
 
     /*
