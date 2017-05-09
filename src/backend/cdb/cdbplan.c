@@ -866,6 +866,8 @@ plan_tree_mutator(Node *node,
 		case T_JoinExpr:
 		case T_SetOperationStmt:
 		case T_InClauseInfo:
+		case T_SpecialJoinInfo:
+		case T_FlattenedSubLink:
 
 		default:
 
