@@ -533,7 +533,6 @@ cdb_set_cheapest_dedup(PlannerInfo *root, RelOptInfo *rel)
 											dedup->cheapest_total_path,
 											NULL, //dedup->join_unique_ininfo->sub_targetlist
 											NULL);//dedup->join_unique_ininfo->in_operators
-
         /* Add to rel's main pathlist. */
         add_path(root, rel, (Path *)upath);
     }
@@ -2856,4 +2855,19 @@ create_hashjoin_path(PlannerInfo *root,
 	cost_hashjoin(pathnode, root, sjinfo);
 
 	return pathnode;
+}
+
+/*
+ * Check if SpecialJoinInfo list contains jointype JOIN_SEMI
+ */
+bool hasSemiJoin(List *join_info_list)
+{
+	ListCell *lc;
+	foreach (lc, join_info_list)
+	{
+		SpecialJoinInfo *sp = (SpecialJoinInfo *) lfirst(lc);
+		if(sp->jointype == JOIN_SEMI)
+			return true;
+	}
+	return false;
 }
