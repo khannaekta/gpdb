@@ -69,9 +69,9 @@ static void distribute_sublink_quals_to_rels(PlannerInfo *root,
 								 List **postponed_qual_list);
 static bool check_outerjoin_delay(PlannerInfo *root, Relids *relids_p,
 					  Relids *nullable_relids_p, bool is_pushed_down);
-static bool check_redundant_nullability_qual(PlannerInfo *root, Node *clause);
 static bool check_equivalence_delay(PlannerInfo *root,
 						RestrictInfo *restrictinfo);
+static bool check_redundant_nullability_qual(PlannerInfo *root, Node *clause);
 static void check_mergejoinable(RestrictInfo *restrictinfo);
 static void check_hashjoinable(RestrictInfo *restrictinfo);
 
@@ -1380,6 +1380,44 @@ check_outerjoin_delay(PlannerInfo *root,
 }
 
 /*
+ * check_equivalence_delay
+ *		Detect whether a potential equivalence clause is rendered unsafe
+ *		by outer-join-delay considerations.  Return TRUE if it's safe.
+ *
+ * The initial tests in distribute_qual_to_rels will consider a mergejoinable
+ * clause to be a potential equivalence clause if it is not outerjoin_delayed.
+ * But since the point of equivalence processing is that we will recombine the
+ * two sides of the clause with others, we have to check that each side
+ * satisfies the not-outerjoin_delayed condition on its own; otherwise it might
+ * not be safe to evaluate everywhere we could place a derived equivalence
+ * condition.
+ */
+static bool
+check_equivalence_delay(PlannerInfo *root,
+						RestrictInfo *restrictinfo)
+{
+	Relids		relids;
+	Relids		nullable_relids;
+
+	/* fast path if no special joins */
+	if (root->join_info_list == NIL)
+		return true;
+
+	/* must copy restrictinfo's relids to avoid changing it */
+	relids = bms_copy(restrictinfo->left_relids);
+	/* check left side does not need delay */
+	if (check_outerjoin_delay(root, &relids, &nullable_relids, true))
+		return false;
+
+	/* and similarly for the right side */
+	relids = bms_copy(restrictinfo->right_relids);
+	if (check_outerjoin_delay(root, &relids, &nullable_relids, true))
+		return false;
+
+	return true;
+}
+
+/*
  * check_redundant_nullability_qual
  *	  Check to see if the qual is an IS NULL qual that is redundant with
  *	  a lower JOIN_ANTI join.
@@ -1445,44 +1483,6 @@ check_redundant_nullability_qual(PlannerInfo *root, Node *clause)
 	}
 
 	return (match_sjinfo != NULL);
-}
-
-/*
- * check_equivalence_delay
- *		Detect whether a potential equivalence clause is rendered unsafe
- *		by outer-join-delay considerations.  Return TRUE if it's safe.
- *
- * The initial tests in distribute_qual_to_rels will consider a mergejoinable
- * clause to be a potential equivalence clause if it is not outerjoin_delayed.
- * But since the point of equivalence processing is that we will recombine the
- * two sides of the clause with others, we have to check that each side
- * satisfies the not-outerjoin_delayed condition on its own; otherwise it might
- * not be safe to evaluate everywhere we could place a derived equivalence
- * condition.
- */
-static bool
-check_equivalence_delay(PlannerInfo *root,
-						RestrictInfo *restrictinfo)
-{
-	Relids		relids;
-	Relids		nullable_relids;
-
-	/* fast path if no special joins */
-	if (root->join_info_list == NIL)
-		return true;
-
-	/* must copy restrictinfo's relids to avoid changing it */
-	relids = bms_copy(restrictinfo->left_relids);
-	/* check left side does not need delay */
-	if (check_outerjoin_delay(root, &relids, &nullable_relids, true))
-		return false;
-
-	/* and similarly for the right side */
-	relids = bms_copy(restrictinfo->right_relids);
-	if (check_outerjoin_delay(root, &relids, &nullable_relids, true))
-		return false;
-
-	return true;
 }
 
 /*
