@@ -451,7 +451,8 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	}
 
     /* CDB: Stash subquery jointree relids before flattening subqueries. */
-    subroot->currlevel_relids = get_relids_in_jointree((Node *)subquery->jointree);
+	//FIXME: Verify the value of include_joins as this a CDB specific code
+    subroot->currlevel_relids = get_relids_in_jointree((Node *)subquery->jointree, false);
     
     /* Ensure that jointree has been normalized. See normalize_query_jointree_mutator() */
     AssertImply(subquery->jointree->fromlist, list_length(subquery->jointree->fromlist) == 1);
@@ -656,7 +657,7 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 	{
 		Relids		subrelids;
 
-		subrelids = get_relids_in_jointree((Node *) subquery->jointree);
+		subrelids = get_relids_in_jointree((Node *) subquery->jointree, false);
 		fix_flattened_sublink_relids((Node *) parse, varno, subrelids);
 		fix_append_rel_relids(root->append_rel_list, varno, subrelids);
 	}
@@ -1460,10 +1461,13 @@ fix_append_rel_relids(List *append_rel_list, int varno, Relids subrelids)
 }
 
 /*
- * get_relids_in_jointree: get set of base RT indexes present in a jointree
+ * get_relids_in_jointree: get set of RT indexes present in a jointree
+ *
+ * If include_joins is true, join RT indexes are included; if false,
+ * only base rels are included.
  */
 Relids
-get_relids_in_jointree(Node *jtnode)
+get_relids_in_jointree(Node *jtnode, bool include_joins)
 {
 	Relids		result = NULL;
 	ListCell   *l;
@@ -1483,7 +1487,8 @@ get_relids_in_jointree(Node *jtnode)
 		foreach(l, f->fromlist)
 		{
 			result = bms_join(result,
-							  get_relids_in_jointree(lfirst(l)));
+							  get_relids_in_jointree(lfirst(l),
+													 include_joins));
 		}
 	}
 	else if (IsA(jtnode, JoinExpr))
@@ -1491,11 +1496,14 @@ get_relids_in_jointree(Node *jtnode)
 		JoinExpr   *j = (JoinExpr *) jtnode;
 
 		/* join's own RT index is not wanted in result */
-		result = get_relids_in_jointree(j->larg);
-		result = bms_join(result, get_relids_in_jointree(j->rarg));
-
+		result = get_relids_in_jointree(j->larg, include_joins);
+		result = bms_join(result,
+						  get_relids_in_jointree(j->rarg, include_joins));
+		// FIXME: Verify the value for include_joins as this is different from postgres
+		if (include_joins)
+			result = bms_add_member(result, j->rtindex);
 		foreach(l, j->subqfromlist)
-			result = bms_join(result, get_relids_in_jointree((Node *)lfirst(l)));
+			result = bms_join(result, get_relids_in_jointree((Node *)lfirst(l), include_joins));
 	}
 	else
 		elog(ERROR, "unrecognized node type: %d",
@@ -1515,7 +1523,7 @@ get_relids_for_join(PlannerInfo *root, int joinrelid)
 										joinrelid);
 	if (!jtnode)
 		elog(ERROR, "could not find join node %d", joinrelid);
-	return get_relids_in_jointree(jtnode);
+	return get_relids_in_jointree(jtnode, false);
 }
 
 /*

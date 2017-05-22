@@ -1322,7 +1322,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	Assert(!bms_is_empty(left_varnos));
 
 	/* Also identify all the rels syntactically within the subselect */
-	subselect_varnos = get_relids_in_jointree((Node *) subselect->jointree);
+	subselect_varnos = get_relids_in_jointree((Node *) subselect->jointree, true);
 	Assert(bms_is_subset(right_varnos, subselect_varnos));
 
 	/* Now we can attach the modified subquery rtable to the parent */
