@@ -21,6 +21,6 @@ extern void cdbsubselect_drop_orderby(Query *subselect);
 extern void cdbsubselect_drop_distinct(Query *subselect);
 extern bool has_correlation_in_funcexpr_rte(List *rtable);
 extern bool is_simple_subquery(PlannerInfo *root, Query *subquery);
-extern Node *convert_IN_to_antijoin(PlannerInfo *root, SubLink *sublink);
+extern Node *convert_IN_to_antijoin(PlannerInfo *root, SubLink *sublink, List **fromlist);
 
 #endif   /* CDBSUBSELECT_H */

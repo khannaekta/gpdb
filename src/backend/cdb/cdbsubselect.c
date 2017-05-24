@@ -107,7 +107,7 @@ cdbsubselect_flatten_sublinks(struct PlannerInfo *root, struct Node *jtnode)
 					cdbsubselect_flatten_sublinks(root, (Node *) lfirst(cell));
 
 				/* Flatten sublinks in WHERE search condition. */
-				fromexpr->quals = pull_up_sublinks(root, &rtrlist, fromexpr->quals);
+				//fromexpr->quals = pull_up_sublinks(root, &rtrlist, fromexpr->quals);
 
 				/* Append any new RangeTblRef nodes to the FROM clause. */
 				if (rtrlist)
@@ -131,7 +131,7 @@ cdbsubselect_flatten_sublinks(struct PlannerInfo *root, struct Node *jtnode)
 				cdbsubselect_flatten_sublinks(root, joinexpr->rarg);
 
 				/* Flatten sublinks in JOIN...ON search condition. */
-				joinexpr->quals = pull_up_sublinks(root, &rtrlist, joinexpr->quals);
+				//joinexpr->quals = pull_up_sublinks(root, &rtrlist, joinexpr->quals);
 
 				/* Add any new RangeTblRef nodes to the join. */
 				joinexpr->subqfromlist = rtrlist;
@@ -1335,7 +1335,7 @@ is_targetlist_nullable(Query *subq)
  * in a top-level where clause (or through a series of inner joins).
  */
 Node *
-convert_IN_to_antijoin(PlannerInfo *root, SubLink *sublink)
+convert_IN_to_antijoin(PlannerInfo *root, SubLink *sublink, List **fromlist)
 {
 	Query	   *parse = root->parse;
 	Query	   *subselect = (Query *) sublink->subselect;
@@ -1361,7 +1361,7 @@ convert_IN_to_antijoin(PlannerInfo *root, SubLink *sublink)
 			join_expr->quals = add_null_match_clause(join_expr->quals);
 		}
 
-		parse->jointree->fromlist = list_make1(join_expr);		/* Replace the join-tree
+		*fromlist = list_make1(join_expr);		/* Replace the join-tree
 																 * with the new one */
 
 		return NULL;

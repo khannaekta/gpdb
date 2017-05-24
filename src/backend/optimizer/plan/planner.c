@@ -711,7 +711,7 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	AssertImply(parse->jointree->fromlist, list_length(parse->jointree->fromlist) == 1);
 
 	/* CDB: Stash current query level's relids before pulling up subqueries. */
-	root->currlevel_relids = get_relids_in_jointree((Node *) parse->jointree);
+	root->currlevel_relids = get_relids_in_jointree((Node *) parse->jointree, false);
 
 	/*
 	 * Look for ANY and EXISTS SubLinks at the top level of WHERE, and try to
@@ -720,7 +720,8 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 	 * their SubLinks are processed just before pulling them up.
 	 */
 	if (parse->hasSubLinks)
-		cdbsubselect_flatten_sublinks(root, (Node *) parse);
+		pull_up_sublinks(root);
+		//cdbsubselect_flatten_sublinks(root, (Node *) parse);
 
 	/*
 	 * Check to see if any subqueries in the rangetable can be merged into
