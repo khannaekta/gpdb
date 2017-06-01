@@ -2853,7 +2853,7 @@ create_nestloop_plan(PlannerInfo *root,
 
 	/* Get the join qual clauses (in plain expression form) */
 	/* Any pseudoconstant clauses are ignored here */
-	if (IS_OUTER_JOIN(best_path->jointype))
+	if (IS_OUTER_JOIN(best_path->jointype) && best_path->jointype != JOIN_SEMI)
 	{
 		extract_actual_join_clauses(joinrestrictclauses,
 									&joinclauses, &otherclauses);
@@ -2923,7 +2923,7 @@ create_mergejoin_plan(PlannerInfo *root,
 
 	/* Get the join qual clauses (in plain expression form) */
 	/* Any pseudoconstant clauses are ignored here */
-	if (IS_OUTER_JOIN(best_path->jpath.jointype))
+	if (IS_OUTER_JOIN(best_path->jpath.jointype) && best_path->jpath.jointype != JOIN_SEMI)
 	{
 		extract_actual_join_clauses(joinclauses,
 									&joinclauses, &otherclauses);
@@ -3236,7 +3236,7 @@ create_hashjoin_plan(PlannerInfo *root,
 
 	/* Get the join qual clauses (in plain expression form) */
 	/* Any pseudoconstant clauses are ignored here */
-	if (IS_OUTER_JOIN(best_path->jpath.jointype))
+	if (IS_OUTER_JOIN(best_path->jpath.jointype) && best_path->jpath.jointype != JOIN_SEMI)
 	{
 		extract_actual_join_clauses(joinclauses,
 									&joinclauses, &otherclauses);

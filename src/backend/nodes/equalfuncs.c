@@ -23,7 +23,7 @@
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.327 2008/08/14 18:47:58 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/equalfuncs.c,v 1.349 2009/02/25 03:30:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -784,17 +784,6 @@ _equalRestrictInfo(RestrictInfo *a, RestrictInfo *b)
 	 * should be derivable from the clause anyway.
 	 */
 
-	return true;
-}
-
-static bool
-_equalFlattenedSubLink(FlattenedSubLink *a, FlattenedSubLink *b)
-{
-	COMPARE_SCALAR_FIELD(jointype);
-	COMPARE_BITMAPSET_FIELD(lefthand);
-	COMPARE_BITMAPSET_FIELD(righthand);
-	COMPARE_NODE_FIELD(quals);
-	
 	return true;
 }
 
@@ -2693,9 +2682,6 @@ equal(void *a, void *b)
 			break;
 		case T_RestrictInfo:
 			retval = _equalRestrictInfo(a, b);
-			break;
-		case T_FlattenedSubLink:
-			retval = _equalFlattenedSubLink(a, b);
 			break;
 		case T_SpecialJoinInfo:
 			retval = _equalSpecialJoinInfo(a, b);

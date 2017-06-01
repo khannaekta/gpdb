@@ -9,7 +9,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.334 2008/08/14 18:47:58 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/nodes/outfuncs.c,v 1.353 2009/02/25 03:30:37 tgl Exp $
  *
  * NOTES
  *	  Every node type that can appear in stored rules' parsetrees *must*
@@ -2195,18 +2195,6 @@ _outInnerIndexscanInfo(StringInfo str, InnerIndexscanInfo *node)
 	WRITE_BOOL_FIELD(isouterjoin);
 	WRITE_NODE_FIELD(cheapest_startup_innerpath);
 	WRITE_NODE_FIELD(cheapest_total_innerpath);
-}
-
-static void
-_outFlattenedSubLink(StringInfo str, FlattenedSubLink *node)
-{
-	WRITE_NODE_TYPE("FLATTENEDSUBLINK");
-	
-	WRITE_ENUM_FIELD(jointype, JoinType);
-	WRITE_BITMAPSET_FIELD(lefthand);
-	WRITE_BITMAPSET_FIELD(righthand);
-	WRITE_NODE_FIELD(quals);
-	WRITE_BOOL_FIELD(try_join_unique);	/*CDB*/
 }
 
 static void
@@ -4683,9 +4671,6 @@ _outNode(StringInfo str, void *obj)
 				break;
 			case T_InnerIndexscanInfo:
 				_outInnerIndexscanInfo(str, obj);
-				break;
-			case T_FlattenedSubLink:
-				_outFlattenedSubLink(str, obj);
 				break;
 			case T_SpecialJoinInfo:
 				_outSpecialJoinInfo(str, obj);

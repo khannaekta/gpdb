@@ -6,7 +6,7 @@
  * Portions Copyright (c) 1996-2008, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
- * $PostgreSQL: pgsql/src/include/optimizer/subselect.h,v 1.32 2008/08/14 18:48:00 tgl Exp $
+ * $PostgreSQL: pgsql/src/include/optimizer/subselect.h,v 1.36 2009/02/25 03:30:38 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -19,13 +19,10 @@
 extern Node *convert_testexpr(PlannerInfo *root,
 				 Node *testexpr,
 				 List *subst_nodes);
-extern bool convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
-										Relids available_rels,
-										Node **new_qual, List **fromlist);
-extern bool convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
-											bool under_not,
-											Relids available_rels,
-											Node **new_qual, List **fromlist);
+extern JoinExpr *convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
+										Relids available_rels);
+extern Node *convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
+											bool under_not, Relids available_rels);
 extern Node *SS_replace_correlation_vars(PlannerInfo *root, Node *expr);
 extern Node *SS_process_sublinks(PlannerInfo *root, Node *expr, bool isQual);
 extern void SS_finalize_plan(PlannerInfo *root, Plan *plan,

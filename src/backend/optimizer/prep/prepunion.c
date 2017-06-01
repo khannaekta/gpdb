@@ -23,7 +23,7 @@
  *
  *
  * IDENTIFICATION
- *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.153 2008/08/14 18:47:59 tgl Exp $
+ *	  $PostgreSQL: pgsql/src/backend/optimizer/prep/prepunion.c,v 1.166 2009/02/25 03:30:37 tgl Exp $
  *
  *-------------------------------------------------------------------------
  */
@@ -1270,23 +1270,6 @@ adjust_appendrel_attrs_mutator(Node *node, AppendRelInfoContext *ctx)
 		if (j->rtindex == appinfo->parent_relid)
 			j->rtindex = appinfo->child_relid;
 		return (Node *) j;
-	}
-	if (IsA(node, FlattenedSubLink))
-	{
-		/* Copy the FlattenedSubLink node with correct mutation of subnodes */
-		FlattenedSubLink *fslink;
-
-		fslink = (FlattenedSubLink *) expression_tree_mutator(node,
-															  adjust_appendrel_attrs_mutator,
-															  (void *) ctx);
-		/* now fix FlattenedSubLink's relid sets */
-		fslink->lefthand = adjust_relid_set(fslink->lefthand,
-											appinfo->parent_relid,
-											appinfo->child_relid);
-		fslink->righthand = adjust_relid_set(fslink->righthand,
-											 appinfo->parent_relid,
-											 appinfo->child_relid);
-		return (Node *) fslink;
 	}
 	/* Shouldn't need to handle SpecialJoinInfo or AppendRelInfo here */
 	Assert(!IsA(node, SpecialJoinInfo));
