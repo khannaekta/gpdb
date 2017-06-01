@@ -1038,18 +1038,31 @@ SS_process_ctes(PlannerInfo *root)
 /*
  * convert_ANY_sublink_to_join: can we convert an ANY SubLink to a join?
  *
- * The caller has found an ANY SubLink at the top level of WHERE, but has not
- * checked the properties of the SubLink further.  Decide whether it is
- * appropriate to process this SubLink in join style.  If not, return NULL.
- * If so, build the qual clause(s) to replace the SubLink, and return them.
- * The qual clauses are wrapped in a FlattenedSubLink node to help later
- * processing place them properly.
+ * The caller has found an ANY SubLink at the top level of one of the query's
+ * qual clauses, but has not checked the properties of the SubLink further.
+ * Decide whether it is appropriate to process this SubLink in join style.
+ * Return TRUE if so, FALSE if the SubLink cannot be converted.
+ *
+ * The only non-obvious input parameter is available_rels: this is the set
+ * of query rels that can safely be referenced in the sublink expression.
+ * (We must restrict this to avoid changing the semantics when a sublink
+ * is present in an outer join's ON qual.)  The conversion must fail if
+ * the converted qual would reference any but these parent-query relids.
+ *
+ * On success, two output parameters are returned:
+ *	*new_qual is set to the qual tree that should replace the SubLink in
+ *		the parent query's qual tree.  The qual clauses are wrapped in a
+ *		FlattenedSubLink node to help later processing place them properly.
+ *	*fromlist is set to a list of pulled-up jointree item(s) that must be
+ *		added at the proper spot in the parent query's jointree.
  *
  * Side effects of a successful conversion include adding the SubLink's
  * subselect to the query's rangetable.
  */
-Node *
-convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *sublink)
+bool
+convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
+							Relids available_rels,
+							Node **new_qual, List **fromlist)
 {
 	Query		*parse = root->parse;
 	Query		*subselect = (Query *) sublink->subselect;
@@ -1076,20 +1089,20 @@ convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *su
 	 * do not attempt to convert the IN to a join.
 	 */
 	if (expression_returns_set((Node *) subselect->targetList))
-		return NULL;
+		return false;
 
 	/*
 	 * If deeply correlated, then don't pull it up
 	 */
 	if (IsSubqueryMultiLevelCorrelated(subselect))
-		return NULL;
+		return false;
 
 	/*
 	 * If there are CTEs, then the transformation does not work. Don't attempt
 	 * to pullup.
 	 */
 	if (parse->cteList)
-		return (Node *) sublink;
+		return false;
 
 	/*
 	 * If uncorrelated, and no Var nodes on lhs, the subquery will be executed
@@ -1111,17 +1124,17 @@ convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *su
 			|| subselect->hasWindowFuncs
 			|| subselect->distinctClause
 			|| subselect->setOperations)
-			return NULL;
+			return false;
 
 		/*
 		 * Do not pull subqueries with correlation in a func expr in the from
 		 * clause of the subselect
 		 */
 		if (has_correlation_in_funcexpr_rte(subselect->rtable))
-			return NULL;
+			return false;
 
 		if (contain_subplans(subselect->jointree->quals))
-			return NULL;
+			return false;
 	}
 
 	/*
@@ -1131,13 +1144,19 @@ convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *su
 	 */
 	left_varnos = pull_varnos(sublink->testexpr);
 	if (bms_is_empty(left_varnos))
-		return NULL;
+		return false;
+
+	/*
+	 * However, it can't refer to anything outside available_rels.
+	 */
+	if (!bms_is_subset(left_varnos, available_rels))
+		return false;
 
 	/*
 	 * The combining operators and left-hand expressions mustn't be volatile.
 	 */
 	if (contain_volatile_functions(sublink->testexpr))
-		return NULL;
+		return false;
 
 	/*
 	 * Okay, pull up the sub-select into top range table and jointree.
@@ -1153,11 +1172,15 @@ convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *su
 										false);
 	parse->rtable = lappend(parse->rtable, rte);
 	rtindex = list_length(parse->rtable);
+
+	/*
+	 * Form a RangeTblRef for the pulled-up sub-select.  This must be added
+	 * to the upper jointree, but it is caller's responsibility to figure
+	 * out where.
+	 */
 	rtr = makeNode(RangeTblRef);
 	rtr->rtindex = rtindex;
-
-	/* Tell caller to augment the jointree with a reference to the new RTE. */
-	*rtrlist_inout = lappend(*rtrlist_inout, rtr);
+	*fromlist = list_make1(rtr);
 
 	/*
 	 * Build a list of Vars representing the subselect outputs.
@@ -1191,7 +1214,9 @@ convert_ANY_sublink_to_join(PlannerInfo *root, List **rtrlist_inout, SubLink *su
 	 */
 	fslink->try_join_unique = false;
 
-	return (Node *) fslink;
+	*new_qual = (Node *) fslink;
+
+	return true;
 }
 
 /*
@@ -1256,20 +1281,15 @@ simplify_EXISTS_query(PlannerInfo *root, Query *query)
 /*
  * convert_EXISTS_sublink_to_join: can we convert an EXISTS SubLink to a join?
  *
- * The caller has found an EXISTS SubLink at the top level of WHERE, or just
- * underneath a NOT, but has not checked the properties of the SubLink
- * further.  Decide whether it is appropriate to process this SubLink in join
- * style.  If not, return NULL.  If so, build the qual clause(s) to replace
- * the SubLink, and return them.  (In the NOT case, the returned clauses are
- * intended to replace the NOT as well.)  The qual clauses are wrapped in a
- * FlattenedSubLink node to help later processing place them properly.
- *
- * Side effects of a successful conversion include adding the SubLink's
- * subselect to the query's rangetable.
+ * The API of this function is identical to convert_ANY_sublink_to_join's,
+ * except that we also support the case where the caller has found NOT EXISTS,
+ * so we need an additional input parameter "under_not".
  */
-Node *
+bool
 convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
-							   bool under_not)
+							   bool under_not,
+							   Relids available_rels,
+							   Node **new_qual, List **fromlist)
 {
 	Query	   *parse = root->parse;
 	Query	   *subselect = (Query *) sublink->subselect;
@@ -1292,20 +1312,20 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	Assert(IsA(subselect, Query));
 
 	if (has_correlation_in_funcexpr_rte(subselect->rtable))
-		return NULL;
+		return false;
 
 	/*
 	 * If deeply correlated, don't bother.
 	 */
 	if (IsSubqueryMultiLevelCorrelated(subselect))
-		return NULL;
+		return false;
 
 	/*
 	* Don't remove the sublink if we cannot pull-up the subquery
 	* later during pull_up_simple_subquery()
 	*/
 	if (!simplify_EXISTS_query(root, subselect))
-		return NULL;
+		return false;
 
 	/*
 	 * 'LIMIT n' makes EXISTS false when n <= 0, and doesn't affect the
@@ -1360,8 +1380,10 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 			limitqual = makeBoolConst(true, false);
 
 		if (under_not)
-			return (Node *) make_notclause((Expr *)limitqual);
-		return limitqual;
+			*new_qual = (Node *) make_notclause((Expr *)limitqual);
+		else
+			*new_qual = limitqual;
+		return false;
 	}
 
 	/*
@@ -1375,8 +1397,10 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 												   false, true);
 		node = make_and_qual(limitqual, (Node *) sublink);
 		if (under_not)
-			return (Node *) make_notclause((Expr *)node);
-		return node;
+			*new_qual = (Node *) make_notclause((Expr *)node);
+		else
+			*new_qual = node;
+		return false;
 	}
 
 	/*
@@ -1392,23 +1416,23 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * query.  (Vars of higher levels should be okay, though.)
 	 */
 	if (contain_vars_of_level((Node *) subselect, 1))
-		return NULL;
+		return false;
 
 	/*
 	 * On the other hand, the WHERE clause must contain some Vars of the
 	 * parent query, else it's not gonna be a join.
 	 */
 	if (!contain_vars_of_level(whereClause, 1))
-		return NULL;
+		return false;
 
 	/*
 	 * We don't risk optimizing if the WHERE clause is volatile, either.
 	 */
 	if (contain_volatile_functions(whereClause))
-		return NULL;
+		return false;
 
 	/*
-	 * Okay, pull up the sub-select into top range table and jointree.
+	 * Prepare to pull up the sub-select into top range table.
 	 *
 	 * We rely here on the assumption that the outer query has no references
 	 * to the inner (necessarily true). Therefore this is a lot easier than
@@ -1418,7 +1442,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * to do.  The machinations of simplify_EXISTS_query ensured that there
 	 * is nothing interesting in the subquery except an rtable and jointree,
 	 * and even the jointree FromExpr no longer has quals.  So we can just
-	 * append the rtable to our own and append the fromlist to our own.
+	 * append the rtable to our own and attach the fromlist to our own.
 	 * But first, adjust all level-zero varnos in the subquery to account
 	 * for the rtable merger.
 	 */
@@ -1452,24 +1476,29 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	bms_free(clause_varnos);
 	Assert(!bms_is_empty(left_varnos));
 
-	/* Also identify all the rels syntactically within the subselect */
-	subselect_varnos = get_relids_in_jointree((Node *) subselect->jointree);
+	/*
+	 * Now that we've got the set of upper-level varnos, we can make the
+	 * last check: only available_rels can be referenced.
+	 */
+	if (!bms_is_subset(left_varnos, available_rels))
+		return false;
+
+	/* Identify all the rels syntactically within the subselect */
+	subselect_varnos = get_relids_in_jointree((Node *) subselect->jointree,
+											  true);
 	Assert(bms_is_subset(right_varnos, subselect_varnos));
 
 	/* Now we can attach the modified subquery rtable to the parent */
 	parse->rtable = list_concat(parse->rtable, subselect->rtable);
 
 	/*
-	 * We assume it's okay to add the pulled-up subquery to the topmost FROM
-	 * list.  This should be all right for EXISTS clauses appearing in WHERE
-	 * or in upper-level plain JOIN/ON clauses.  EXISTS appearing below any
-	 * outer joins couldn't be placed there, however.
+	 * Pass back the subquery fromlist to be attached to upper jointree
+	 * in a suitable place.
 	 */
-	parse->jointree->fromlist = list_concat(parse->jointree->fromlist,
-											subselect->jointree->fromlist);
+	*fromlist = subselect->jointree->fromlist;
 
 	/*
-	 * Now build the FlattenedSubLink node.
+	 * And finally, build the FlattenedSubLink node.
 	 */
 	fslink = makeNode(FlattenedSubLink);
 	fslink->jointype = under_not ? JOIN_ANTI : JOIN_SEMI;
@@ -1477,7 +1506,9 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	fslink->righthand = subselect_varnos;
 	fslink->quals = (Expr *) whereClause;
 
-	return (Node *) fslink;
+	*new_qual = (Node *) fslink;
+
+	return true;
 }
 
 /*
