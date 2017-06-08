@@ -31,6 +31,7 @@
 #include "parser/parse_expr.h"
 #include "parser/parse_relation.h"
 #include "parser/parsetree.h"
+#include "parser/parse_oper.h"
 #include "rewrite/rewriteManip.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
@@ -1009,6 +1010,8 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	 * The test expression must contain some Vars of the parent query,
 	 * else it's not gonna be a join.  (Note that it won't have Vars
 	 * referring to the subquery, rather Params.)
+	 * GPDB_90_MERGE_FIXME: Remove the collowing check once we have
+	 * pre-join-deduplication mechanism implemented.
 	 */
 	upper_varnos = pull_varnos(sublink->testexpr);
 	if (bms_is_empty(upper_varnos))
@@ -1070,6 +1073,8 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 
 	/*
 	 * GPDB_90_MERGE_FIXME: How to handle try_join_unique?
+	 * try_join_unique is used for pre-join-deduplication decision in
+	 * cdb_make_rel_dedupinfo()
 	 * Following the previous logic from convert_IN_to_join(), this flag is
 	 * now needed later on when creating SpecialJoinInfo. That needs to be
 	 * passed through CdbRelDedupInfo via JoinExpr. Thus try_join_unique
