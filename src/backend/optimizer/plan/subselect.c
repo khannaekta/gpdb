@@ -1070,6 +1070,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	result->quals = quals;
 	result->alias = NULL;
 	result->rtindex = 0;
+	result->isCorrelated = correlated;
 
 	/*
 	 * GPDB_90_MERGE_FIXME: How to handle try_join_unique?
@@ -1359,6 +1360,7 @@ convert_EXISTS_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 	result->quals = whereClause;
 	result->alias = NULL;
 	result->rtindex = 0;
+	result->isCorrelated = true; /* Otherwise we won't be here */
 
 	return (Node *) result;
 }

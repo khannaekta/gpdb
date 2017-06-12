@@ -535,8 +535,8 @@ cdb_set_cheapest_dedup(PlannerInfo *root, RelOptInfo *rel)
 		/* Top off the subpath with DISTINCT ON the result columns. */
 		upath = create_unique_exprlist_path(root,
 											dedup->cheapest_total_path,
-											NULL,
-											NULL);
+											dedup->join_unique_ininfo->sub_targetlist,
+											dedup->join_unique_ininfo->in_operators);
 		/* Add to rel's main pathlist. */
 		add_path(root, rel, (Path *)upath);
     }

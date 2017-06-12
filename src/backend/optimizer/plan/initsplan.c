@@ -53,7 +53,7 @@ static List *deconstruct_recurse(PlannerInfo *root, Node *jtnode,
 static SpecialJoinInfo *make_outerjoininfo(PlannerInfo *root,
 											Relids left_rels, Relids right_rels,
 											Relids inner_join_rels,
-											JoinType jointype, List *clause);
+											JoinType jointype, List *clause, bool is_correlated);
 static void distribute_qual_to_rels(PlannerInfo *root, Node *clause,
 						bool is_deduced,
 						bool below_outer_join,
@@ -539,7 +539,8 @@ deconstruct_recurse(PlannerInfo *root, Node *jtnode, bool below_outer_join,
 										leftids, rightids,
 										*inner_join_rels,
 										j->jointype,
-										(List *) j->quals);
+										(List *) j->quals,
+										j->isCorrelated);
 			if (j->jointype == JOIN_SEMI)
 				ojscope = NULL;
 			else
@@ -656,7 +657,7 @@ static SpecialJoinInfo *
 make_outerjoininfo(PlannerInfo *root,
 				   Relids left_rels, Relids right_rels,
 				   Relids inner_join_rels,
-				   JoinType jointype, List *clause)
+				   JoinType jointype, List *clause, bool is_correlated)
 {
 	SpecialJoinInfo *sjinfo = makeNode(SpecialJoinInfo);
 	Relids		clause_relids;
@@ -701,6 +702,9 @@ make_outerjoininfo(PlannerInfo *root,
 	sjinfo->jointype = jointype;
 	/* this always starts out false */
 	sjinfo->delay_upper_joins = false;
+	sjinfo->is_correlated = is_correlated;
+	sjinfo->in_operators = NIL;
+	sjinfo->sub_targetlist = NIL;
 	sjinfo->join_quals = clause;
 
 	/* If we chose to take inner join path for this semi join then we MAY

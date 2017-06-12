@@ -27,6 +27,7 @@
 #include "parser/parse_expr.h"              /* exprType(), exprTypmod() */
 #include "utils/hsearch.h"
 #include "utils/lsyscache.h"
+#include "optimizer/clauses.h"
 
 
 typedef struct JoinHashEntry
@@ -920,7 +921,41 @@ cdb_make_rel_dedup_info(PlannerInfo *root, RelOptInfo *rel)
     {
         SpecialJoinInfo   *sjinfo = (SpecialJoinInfo *)lfirst(cell);
         if(!sjinfo->consider_dedup)
-            continue;
+			continue;
+
+		/* This means IN or EXISTS sublink */
+		if (!sjinfo->is_correlated && sjinfo->join_quals)
+		{
+			ListCell* lc;
+			foreach(lc, sjinfo->join_quals)
+			{
+				Node *qual = lfirst(lc);
+				List *left_exprs, *right_exprs, *in_operators;
+				if (IsA(qual, OpExpr))
+				{
+					OpExpr *op = (OpExpr *) qual;
+					Oid opno = op->opno;
+					List *opfamilies;
+					List *opstrats;
+					get_op_btree_interpretation(opno, &opfamilies, &opstrats);
+					if (list_member_int(opstrats, ROWCOMPARE_EQ) &&
+						list_length(op->args) == 2)
+					{
+						left_exprs = list_make1(linitial(op->args));
+						right_exprs = list_make1(lsecond(op->args));
+
+						sjinfo->try_join_unique = true;
+						sjinfo->in_operators = list_make1_oid(opno);
+						sjinfo->sub_targetlist = right_exprs;
+					}
+				}
+				else if (and_clause(qual))
+				{
+					// TODO: implement this!!
+					Assert(false);
+				}
+			}
+		}
 
         /* Got all of the subquery's own tables? */
         if (bms_is_subset(sjinfo->syn_righthand, rel->relids))
