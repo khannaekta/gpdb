@@ -923,44 +923,6 @@ cdb_make_rel_dedup_info(PlannerInfo *root, RelOptInfo *rel)
         if(!sjinfo->consider_dedup)
 			continue;
 
-		/* This means IN or EXISTS sublink */
-		if (!sjinfo->is_correlated && sjinfo->join_quals)
-		{
-            List *left_exprs = NIL;
-            List *right_exprs = NIL;
-            List *in_operators = NIL;
-            
-			ListCell* lc;
-			foreach(lc, sjinfo->join_quals)
-			{
-				Node *qual = lfirst(lc);
-
-				if (IsA(qual, OpExpr))
-				{
-					OpExpr *op = (OpExpr *) qual;
-					Oid opno = op->opno;
-					List *opfamilies;
-					List *opstrats;
-					get_op_btree_interpretation(opno, &opfamilies, &opstrats);
-					if (list_member_int(opstrats, ROWCOMPARE_EQ) &&
-						list_length(op->args) == 2)
-					{
-						left_exprs = lappend(left_exprs, linitial(op->args));
-						right_exprs = lappend(right_exprs, lsecond(op->args));
-                        in_operators = lappend_oid(in_operators, opno);
-						sjinfo->try_join_unique = true;
-					}
-				}
-				else if (and_clause(qual))
-				{
-					// TODO: implement this!!
-					elog(ERROR, "We are crazy");
-				}
-			}
-            sjinfo->in_operators = in_operators;
-            sjinfo->sub_targetlist = right_exprs;
-		}
-
         /* Got all of the subquery's own tables? */
         if (bms_is_subset(sjinfo->syn_righthand, rel->relids))
         {

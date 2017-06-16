@@ -702,7 +702,6 @@ make_outerjoininfo(PlannerInfo *root,
 	sjinfo->jointype = jointype;
 	/* this always starts out false */
 	sjinfo->delay_upper_joins = false;
-	sjinfo->is_correlated = is_correlated;
 	sjinfo->in_operators = NIL;
 	sjinfo->sub_targetlist = NIL;
 	sjinfo->join_quals = clause;
@@ -832,6 +831,53 @@ make_outerjoininfo(PlannerInfo *root,
 
 	sjinfo->min_lefthand = min_lefthand;
 	sjinfo->min_righthand = min_righthand;
+
+	// TODO: Write a nice comment here
+	if (!is_correlated && sjinfo->join_quals)
+	{
+		List	*right_exprs = NIL;
+		List	*in_operators = NIL;
+		List	*in_vars;
+
+		ListCell* lc;
+		foreach(lc, sjinfo->join_quals)
+		{
+			Node *qual = lfirst(lc);
+
+			if (IsA(qual, OpExpr))
+			{
+				OpExpr *op = (OpExpr *) qual;
+				Oid opno = op->opno;
+				List *opfamilies;
+				List *opstrats;
+				get_op_btree_interpretation(opno, &opfamilies, &opstrats);
+				if (list_member_int(opstrats, ROWCOMPARE_EQ) &&
+					list_length(op->args) == 2)
+				{
+					right_exprs = lappend(right_exprs, lsecond(op->args));
+					in_operators = lappend_oid(in_operators, opno);
+					sjinfo->try_join_unique = true;
+				}
+			}
+			else if (and_clause(qual))
+			{
+				// TODO: implement this!!
+				elog(ERROR, "We are crazy");
+			}
+		}
+		sjinfo->in_operators = in_operators;
+		sjinfo->sub_targetlist = right_exprs;
+
+		// Add another comment here
+		in_vars = pull_var_clause((Node *) sjinfo->sub_targetlist, false);
+		if (in_vars != NIL)
+		{
+			add_vars_to_targetlist(root, in_vars,
+								   bms_union(sjinfo->syn_lefthand,
+											 sjinfo->syn_righthand));
+			list_free(in_vars);
+		}
+	}
 
 	return sjinfo;
 }
