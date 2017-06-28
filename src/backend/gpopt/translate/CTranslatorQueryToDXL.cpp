@@ -3019,6 +3019,9 @@ CTranslatorQueryToDXL::PdxlnFromValues
 	// children of the UNION ALL
 	DrgPdxln *pdrgpdxln = GPOS_NEW(m_pmp) DrgPdxln(m_pmp);
 	
+	// children of Logical ValueList
+	DrgPdxln *pdrgpdxlnVL = GPOS_NEW(m_pmp) DrgPdxln(m_pmp);
+	
 	// array of input colid arrays
 	DrgPdrgPul *pdrgpdrgulInputColIds = GPOS_NEW(m_pmp) DrgPdrgPul(m_pmp);
 
@@ -3029,6 +3032,9 @@ CTranslatorQueryToDXL::PdxlnFromValues
 	ULONG ulTuplePos = 0;
 	ListCell *plcTuple = NULL;
 	GPOS_ASSERT(NULL != prte->eref);
+
+	// Flag for checking value list has only constants. For all constants --> VALUESCAN operator else retain UnionAll
+	BOOL fAllConstant = true;
 	ForEach (plcTuple, plTuples)
 	{
 		List *plTuple = (List *) lfirst(plcTuple);
@@ -3091,6 +3097,7 @@ CTranslatorQueryToDXL::PdxlnFromValues
 			}
 			else
 			{
+				fAllConstant = false;
 				// translate the scalar expression into a project element
 				CDXLNode *pdxlnPrE = PdxlnPrEFromGPDBExpr(pexpr, szColName, true /* fInsistNewColIds */ );
 				pdrgpdxlnPrEl->Append(pdxlnPrE);
@@ -3121,7 +3128,9 @@ CTranslatorQueryToDXL::PdxlnFromValues
 			ulColPos++;
 		}
 		
-		pdrgpdxln->Append(PdxlnFromColumnValues(pdrgpdxldatum, pdrgpdxlcdCTG, pdrgpdxlnPrEl));
+		pdrgpdxln->Append(PdxlnFromColumnValuesForAppend(pdrgpdxldatum, pdrgpdxlcdCTG, pdrgpdxlnPrEl));
+		pdrgpdxlnVL->Append(PdxlnFromColumnValues(pdrgpdxldatum, pdrgpdxlnPrEl));
+		
 		pdrgpdrgulInputColIds->Append(pdrgpulColIds);
 		ulTuplePos++;
 		
@@ -3133,7 +3142,18 @@ CTranslatorQueryToDXL::PdxlnFromValues
 	
 	GPOS_ASSERT(NULL != pdrgpdxlcd);
 
-	if (1 < ulValues)
+	if (fAllConstant)
+	{
+		// Create ValueList DXL Node
+		CDXLLogicalValueList *pdxlop = GPOS_NEW(m_pmp) CDXLLogicalValueList(m_pmp, pdrgpdxlcd, pdrgpdrgulInputColIds);
+		CDXLNode *pdxln = GPOS_NEW(m_pmp) CDXLNode(m_pmp, pdxlop, pdrgpdxlnVL);
+
+		// make note of new columns from Value Scan
+		m_pmapvarcolid->LoadColumns(m_ulQueryLevel, ulRTIndex, pdxlop->Pdrgpdxlcd());
+
+		return pdxln;
+	}
+	else if (1 < ulValues)
 	{
 		// create a UNION ALL operator
 		CDXLLogicalSetOp *pdxlop = GPOS_NEW(m_pmp) CDXLLogicalSetOp(m_pmp, EdxlsetopUnionAll, pdrgpdxlcd, pdrgpdrgulInputColIds, false);
@@ -3164,7 +3184,7 @@ CTranslatorQueryToDXL::PdxlnFromValues
 
 //---------------------------------------------------------------------------
 //	@function:
-//		CTranslatorQueryToDXL::PdxlnFromColumnValues
+//		CTranslatorQueryToDXL::PdxlnFromColumnValuesForAppend
 //
 //	@doc:
 //		Generate a DXL node from column values, where each column value is 
@@ -3172,7 +3192,7 @@ CTranslatorQueryToDXL::PdxlnFromValues
 //		Each datum is associated with a column descriptors used by the CTG
 //---------------------------------------------------------------------------
 CDXLNode *
-CTranslatorQueryToDXL::PdxlnFromColumnValues
+CTranslatorQueryToDXL::PdxlnFromColumnValuesForAppend
 	(
 	DrgPdxldatum *pdrgpdxldatumCTG,
 	DrgPdxlcd *pdrgpdxlcdCTG,
@@ -3225,6 +3245,62 @@ CTranslatorQueryToDXL::PdxlnFromColumnValues
 											pdxlnCTG
 											);
 
+	return pdxlnProject;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CTranslatorQueryToDXL::PdxlnFromColumnValues
+//
+//	@doc:
+//		Generate a DXL node from column values, where each column value is
+//		either a datum or scalar expression represented as project element.
+//		Each datum is associated with a column descriptors used by the CTG
+//---------------------------------------------------------------------------
+CDXLNode *
+CTranslatorQueryToDXL::PdxlnFromColumnValues
+(
+	DrgPdxldatum *pdrgpdxldatumValues,
+	DrgPdxln *pdrgpdxlnPrEl
+	)
+const
+{
+	GPOS_ASSERT(NULL != pdrgpdxldatumValues);
+	GPOS_ASSERT(NULL != pdrgpdxlnPrEl);
+	
+	CDXLNode *pdxlnValues = NULL;
+	// create the array of datum arrays
+	DrgPdrgPdxldatum *pdrgpdrgpdxldatumValues = GPOS_NEW(m_pmp) DrgPdrgPdxldatum(m_pmp);
+	
+	pdrgpdxldatumValues->AddRef();
+	pdrgpdrgpdxldatumValues->Append(pdrgpdxldatumValues);
+	
+	CDXLLogicalValues *pdxlop = GPOS_NEW(m_pmp) CDXLLogicalValues(m_pmp, pdrgpdrgpdxldatumValues);
+		
+	pdxlnValues = GPOS_NEW(m_pmp) CDXLNode(m_pmp, pdxlop);
+	
+	if (0 == pdrgpdxlnPrEl->UlLength())
+	{
+		return pdxlnValues;
+	}
+	
+	// create a project node for the list of project elements
+	pdrgpdxlnPrEl->AddRef();
+	CDXLNode *pdxlnPrL = GPOS_NEW(m_pmp) CDXLNode
+	(
+	 m_pmp,
+	 GPOS_NEW(m_pmp) CDXLScalarProjList(m_pmp),
+	 pdrgpdxlnPrEl
+	 );
+	
+	CDXLNode *pdxlnProject = GPOS_NEW(m_pmp) CDXLNode
+	(
+	 m_pmp,
+	 GPOS_NEW(m_pmp) CDXLLogicalProject(m_pmp),
+	 pdxlnPrL,
+	 pdxlnValues
+	 );
+	
 	return pdxlnProject;
 }
 

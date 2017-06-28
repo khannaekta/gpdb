@@ -346,10 +346,19 @@ namespace gpdxl
 
 			// generate a DXL node from column values, where each column value is
 			// either a datum or scalar expression represented as a project element.
+			CDXLNode *PdxlnFromColumnValuesForAppend
+				(
+				DrgPdxldatum *pdrgpdxldatum,
+				DrgPdxlcd *pdrgpdxlcdCTG,
+				DrgPdxln *pdrgpdxlnPE
+				)
+			const;
+		
+			// generate a DXL node from column values, where each column value is
+			// either a datum or scalar expression represented as a project element.
 			CDXLNode *PdxlnFromColumnValues
 			 	(
 			 	DrgPdxldatum *pdrgpdxldatum,
-			 	DrgPdxlcd *pdrgpdxlcdCTG,
 			 	DrgPdxln *pdrgpdxlnPE
 			    )
 			    const;
