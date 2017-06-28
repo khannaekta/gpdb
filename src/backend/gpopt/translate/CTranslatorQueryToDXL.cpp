@@ -3018,6 +3018,9 @@ CTranslatorQueryToDXL::PdxlnFromValues
 
 	// children of the UNION ALL
 	DrgPdxln *pdrgpdxln = GPOS_NEW(m_pmp) DrgPdxln(m_pmp);
+
+    // array of datum arrays for Values
+    DrgPdrgPdxldatum *pdrgpdrgpdxldatumValues = GPOS_NEW(m_pmp) DrgPdrgPdxldatum(m_pmp);
 	
 	// array of input colid arrays
 	DrgPdrgPul *pdrgpdrgulInputColIds = GPOS_NEW(m_pmp) DrgPdrgPul(m_pmp);
@@ -3029,6 +3032,9 @@ CTranslatorQueryToDXL::PdxlnFromValues
 	ULONG ulTuplePos = 0;
 	ListCell *plcTuple = NULL;
 	GPOS_ASSERT(NULL != prte->eref);
+
+	// Flag for checking value list has only constants. For all constants --> VALUESCAN operator else retain UnionAll
+	BOOL fAllConstant = true;
 	ForEach (plcTuple, plTuples)
 	{
 		List *plTuple = (List *) lfirst(plcTuple);
@@ -3091,6 +3097,7 @@ CTranslatorQueryToDXL::PdxlnFromValues
 			}
 			else
 			{
+				fAllConstant = false;
 				// translate the scalar expression into a project element
 				CDXLNode *pdxlnPrE = PdxlnPrEFromGPDBExpr(pexpr, szColName, true /* fInsistNewColIds */ );
 				pdrgpdxlnPrEl->Append(pdxlnPrE);
@@ -3122,6 +3129,7 @@ CTranslatorQueryToDXL::PdxlnFromValues
 		}
 		
 		pdrgpdxln->Append(PdxlnFromColumnValues(pdrgpdxldatum, pdrgpdxlcdCTG, pdrgpdxlnPrEl));
+        pdrgpdrgpdxldatumValues->Append(pdrgpdxldatum);
 		pdrgpdrgulInputColIds->Append(pdrgpulColIds);
 		ulTuplePos++;
 		
@@ -3133,7 +3141,18 @@ CTranslatorQueryToDXL::PdxlnFromValues
 	
 	GPOS_ASSERT(NULL != pdrgpdxlcd);
 
-	if (1 < ulValues)
+	if (fAllConstant)
+	{
+		// Create ValuesGet DXL Node
+		CDXLLogicalConstTable *pdxlop = GPOS_NEW(m_pmp) CDXLLogicalConstTable(m_pmp, pdrgpdxlcd, pdrgpdrgpdxldatumValues);
+		CDXLNode *pdxln = GPOS_NEW(m_pmp) CDXLNode(m_pmp, pdxlop, pdrgpdxln);
+
+		// make note of new columns from Value Scan
+		m_pmapvarcolid->LoadColumns(m_ulQueryLevel, ulRTIndex, pdxlop->Pdrgpdxlcd());
+
+		return pdxln;
+	}
+	else if (1 < ulValues)
 	{
 		// create a UNION ALL operator
 		CDXLLogicalSetOp *pdxlop = GPOS_NEW(m_pmp) CDXLLogicalSetOp(m_pmp, EdxlsetopUnionAll, pdrgpdxlcd, pdrgpdrgulInputColIds, false);
