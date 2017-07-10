@@ -1993,6 +1993,156 @@ CTranslatorDXLToPlStmt::PrteFromDXLTVF
 	return prte;
 }
 
+// Translates a DXL ValuesScan node into a GPDB VALUESSCAN node
+//
+//---------------------------------------------------------------------------
+Plan *
+CTranslatorDXLToPlStmt::PplanValuesScanFromDXLValuesScan
+(
+	const CDXLNode *pdxlnValuesScan,
+	CDXLTranslateContext *pdxltrctxOut,
+	Plan *pplanParent,
+	DrgPdxltrctx *pdrgpdxltrctxPrevSiblings
+	)
+{
+    // translation context for column mappings
+    CDXLTranslateContextBaseTable dxltrctxbt(m_pmp);
+    
+    // we will add the new range table entry as the last element of the range table
+    Index iRel = gpdb::UlListLength(m_pctxdxltoplstmt->PlPrte()) + 1;
+    
+    dxltrctxbt.SetIdx(iRel);
+    
+    // create value scan node
+    ValuesScan *pvaluescan = MakeNode(ValuesScan);
+    pvaluescan->scan.scanrelid = iRel;
+    Plan *pplan = &(pvaluescan->scan.plan);
+    //pvaluescan->values_lists = Make
+    List *valuesList = NIL;
+    
+    RangeTblEntry *prte = PrteFromDXLValuesScan(pdxlnValuesScan, pdxltrctxOut, &dxltrctxbt, pplan, &valuesList);
+    GPOS_ASSERT(NULL != prte);
+    if(valuesList != NIL)
+        pvaluescan->values_lists = valuesList;
+    
+    m_pctxdxltoplstmt->AddRTE(prte);
+    
+    pplan->plan_node_id = m_pctxdxltoplstmt->UlNextPlanId();
+    pplan->plan_parent_node_id = IPlanId(pplanParent);
+    pplan->nMotionNodes = 0;
+    
+    // translate operator costs
+    TranslatePlanCosts
+    (
+     CDXLPhysicalProperties::PdxlpropConvert(pdxlnValuesScan->Pdxlprop())->Pdxlopcost(),
+     &(pplan->startup_cost),
+     &(pplan->total_cost),
+     &(pplan->plan_rows),
+     &(pplan->plan_width)
+     );
+    
+    // a value scan node must have at least 1 child: projection list
+    GPOS_ASSERT(1 <= pdxlnValuesScan->UlArity());
+    
+    CDXLNode *pdxlnPrL = (*pdxlnValuesScan)[EdxltsIndexProjList];
+    
+    // translate proj list
+    List *plTargetList = PlTargetListFromProjList
+    (
+     pdxlnPrL,
+     &dxltrctxbt,
+     NULL,
+     pdxltrctxOut,
+     pplan
+     );
+    
+    pplan->targetlist = plTargetList;
+    
+    ListCell *plcTe = NULL;
+    
+    ForEach (plcTe, plTargetList)
+    {
+        TargetEntry *pte = (TargetEntry *) lfirst(plcTe);
+        OID oidType = gpdb::OidExprType((Node*) pte->expr);
+        GPOS_ASSERT(InvalidOid != oidType);
+        
+        INT typMod = gpdb::IExprTypeMod((Node*) pte->expr);
+    }
+    
+    SetParamIds(pplan);
+    
+    return (Plan *) pvaluescan;
+}
+
+//---------------------------------------------------------------------------
+//	@function:
+//		CTranslatorDXLToPlStmt::PrteFromDXLValuesScan
+//
+//	@doc:
+//		Create a range table entry from a CDXLPhysicalValuesScan node
+//
+//---------------------------------------------------------------------------
+RangeTblEntry *
+CTranslatorDXLToPlStmt::PrteFromDXLValuesScan
+(
+	const CDXLNode *pdxlnValuesScan,
+	CDXLTranslateContext *pdxltrctxOut,
+	CDXLTranslateContextBaseTable *pdxltrctxbt,
+	Plan *pplanParent,
+    List *valuesList
+	)
+{
+    CDXLPhysicalValuesScan *pdxlop = CDXLPhysicalValuesScan::PdxlopConvert(pdxlnValuesScan->Pdxlop());
+    
+    RangeTblEntry *prte = MakeNode(RangeTblEntry);
+    prte->rtekind = RTE_VALUES;
+
+    Alias *palias = MakeNode(Alias);
+    palias->colnames = NIL;
+    
+    // get values alias
+    palias->aliasname = CTranslatorUtils::SzFromWsz(pdxlop->Pstr()->Wsz());
+    
+    // project list
+    CDXLNode *pdxlnPrL = (*pdxlnValuesScan)[EdxltsIndexProjList];
+    
+    // get column names
+    const ULONG ulCols = pdxlnPrL->UlArity();
+    for (ULONG ul = 0; ul < ulCols; ul++)
+    {
+        CDXLNode *pdxlnPrElem = (*pdxlnPrL)[ul];
+        CDXLScalarProjElem *pdxlopPrEl = CDXLScalarProjElem::PdxlopConvert(pdxlnPrElem->Pdxlop());
+        
+        CHAR *szColName = CTranslatorUtils::SzFromWsz(pdxlopPrEl->PmdnameAlias()->Pstr()->Wsz());
+        
+        Value *pvalColName = gpdb::PvalMakeString(szColName);
+        palias->colnames = gpdb::PlAppendElement(palias->colnames, pvalColName);
+        
+        // save mapping col id -> index in translate context
+        (void) pdxltrctxbt->FInsertMapping(pdxlopPrEl->UlId(), ul+1 /*iAttno*/);
+    }
+    
+    // Iterate over Value List
+    CDXLNode *pdxlnValuesList = (*pdxlnValuesScan)[ul];
+    const ULONG ulTuples = pdxlnValuesList->UlArity()
+    for (ULONG ulTupPos = 0; ulTupPos < ulTuples; ulTupPos++)
+    {
+        const ULONG ulCols = pdxlnValuesList->UlArity();
+        List *values = NIL;
+        for (ULONG ulColPos = 0; ulColPos < ulCols; ulColPos++)
+        {
+            values = lappend(values,);
+        }
+        
+    }
+    
+    prte->values_lists = (Node *)valuesList;
+    prte->inFromCl = true;
+    prte->eref = palias;
+    
+    return prte;
+}
+
 //---------------------------------------------------------------------------
 //	@function:
 //		CTranslatorDXLToPlStmt::PnljFromDXLNLJ
