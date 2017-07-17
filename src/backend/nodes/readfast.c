@@ -984,7 +984,6 @@ _readSubPlan(void)
 	READ_DONE();
 }
 
-
 /*
  * _readAlternativeSubPlan
  */
