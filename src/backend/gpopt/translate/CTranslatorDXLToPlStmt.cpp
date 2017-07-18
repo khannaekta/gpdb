@@ -6201,8 +6201,6 @@ CTranslatorDXLToPlStmt::PplanValueScan
 	RangeTblEntry *prte = PrteFromDXLValueScan(pdxlnValueScan, pdxltrctxOut, &dxltrctxbt, pplan);
 	GPOS_ASSERT(NULL != prte);
 
-	pvaluescan->values_lists = (List *)gpdb::PvCopyObject(prte->values_lists);
-
 	m_pctxdxltoplstmt->AddRTE(prte);
 
 	pplan->plan_node_id = m_pctxdxltoplstmt->UlNextPlanId();
