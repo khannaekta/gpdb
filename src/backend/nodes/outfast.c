@@ -1397,6 +1397,9 @@ _outNode(StringInfo str, void *obj)
 			case T_SubPlan:
 				_outSubPlan(str, obj);
 				break;
+			case T_AlternativeSubPlan:
+				_outAlternativeSubPlan(str, obj);
+				break;
 			case T_FieldSelect:
 				_outFieldSelect(str, obj);
 				break;
