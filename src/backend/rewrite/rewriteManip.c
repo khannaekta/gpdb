@@ -39,6 +39,8 @@ static bool contain_aggs_of_level_walker(Node *node,
 static bool locate_agg_of_level_walker(Node *node,
 						   locate_agg_of_level_context *context);
 static bool checkExprHasSubLink_walker(Node *node, void *context);
+static Relids offset_relid_set(Relids relids, int offset);
+static Relids adjust_relid_set(Relids relids, int oldrelid, int newrelid);
 
 /*
  * checkExprHasAggs -
@@ -369,6 +371,20 @@ OffsetVarNodes(Node *node, int offset, int sublevels_up)
 		OffsetVarNodes_walker(node, &context);
 }
 
+static Relids
+offset_relid_set(Relids relids, int offset)
+{
+	Relids		result = NULL;
+	Relids		tmprelids;
+	int			rtindex;
+	
+	tmprelids = bms_copy(relids);
+	while ((rtindex = bms_first_member(tmprelids)) >= 0)
+		result = bms_add_member(result, rtindex + offset);
+	bms_free(tmprelids);
+	return result;
+}
+
 /*
  * ChangeVarNodes - adjust Var nodes for a specific change of RT index
  *
@@ -533,6 +549,23 @@ ChangeVarNodes(Node *node, int rt_index, int new_index, int sublevels_up)
 	}
 	else
 		ChangeVarNodes_walker(node, &context);
+}
+
+/*
+ * Substitute newrelid for oldrelid in a Relid set
+ */
+static Relids
+adjust_relid_set(Relids relids, int oldrelid, int newrelid)
+{
+	if (bms_is_member(oldrelid, relids))
+	{
+		/* Ensure we have a modifiable copy */
+		relids = bms_copy(relids);
+		/* Remove old, add new */
+		relids = bms_del_member(relids, oldrelid);
+		relids = bms_add_member(relids, newrelid);
+	}
+	return relids;
 }
 
 /*
