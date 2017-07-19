@@ -716,7 +716,7 @@ ERROR:  ON clause may not be used with a writable external table
 -- SELECT from WET (negative)
 --
 select * from wet_pos1;
-ERROR:  External scan error: It is not possible to read from a WRITABLE external table. Create the table as READABLE instead. (CTranslatorDXLToPlStmt.cpp:938)
+ERROR:  External scan error: It is not possible to read from a WRITABLE external table. Create the table as READABLE instead. (CTranslatorDXLToPlStmt.cpp:939)
 --
 -- WET: export some data with INSERT SELECT, INSERT and COPY. 
 --
