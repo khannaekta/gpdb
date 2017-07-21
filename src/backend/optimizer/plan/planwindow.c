@@ -1259,10 +1259,27 @@ make_lower_targetlist(Query *parse,
 		if ( f == NULL )
 			continue;
 			
+<<<<<<< HEAD
 		extravars = list_concat(extravars,
 								pull_var_clause(f->trail->val, false));
 		extravars = list_concat(extravars,
 								pull_var_clause(f->lead->val, false));
+=======
+		if ( window_edge_is_delayed(f->trail) )
+		{
+			// 8.4-9.0:MERGE-FIXME: Should we pass includePlaceHolderVars as true
+			// in pull_var_clause ?
+			extravars = list_concat(extravars, 
+							pull_var_clause(f->trail->val, false));
+		}
+		if ( window_edge_is_delayed(f->lead) )
+		{
+			// 8.4-9.0:MERGE-FIXME: Should we pass includePlaceHolderVars as true
+			// in pull_var_clause ?
+			extravars = list_concat(extravars,
+							pull_var_clause(f->lead->val, false));
+		}
+>>>>>>> 8d1cb1c... Cherrypick upstream commit dc9cc88
 	}
 	lower_tlist = add_to_flat_tlist(lower_tlist, extravars, false /* resjunk */);
 	list_free(extravars);
