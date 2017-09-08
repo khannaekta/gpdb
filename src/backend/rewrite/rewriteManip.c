@@ -672,6 +672,7 @@ IncrementVarSublevelsUp(Node *node, int delta_sublevels_up,
 
 	context.delta_sublevels_up = delta_sublevels_up;
 	context.min_sublevels_up = min_sublevels_up;
+	context.ignore_min_sublevels_up = false;
 
 	/*
 	 * Must be prepared to start with a Query or a bare expression tree; if
@@ -715,6 +716,7 @@ IncrementVarSublevelsUp_rtable(List *rtable, int delta_sublevels_up,
 
 	context.delta_sublevels_up = delta_sublevels_up;
 	context.min_sublevels_up = min_sublevels_up;
+	context.ignore_min_sublevels_up = false;
 
 	range_table_walker(rtable,
 					   IncrementVarSublevelsUp_walker,

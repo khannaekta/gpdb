@@ -3219,9 +3219,7 @@ set_rel_width(PlannerInfo *root, RelOptInfo *rel)
 			int32		item_width;
 			
 			Assert(var->varno == rel->relid);
-			Assert(var->varattno >= rel->min_attr);
-			Assert(var->varattno <= rel->max_attr);
-			
+
 			/* Virtual column? */
 			if (var->varattno <= FirstLowInvalidHeapAttributeNumber)
 			{
