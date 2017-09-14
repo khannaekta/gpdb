@@ -1271,13 +1271,7 @@ convert_ANY_sublink_to_join(PlannerInfo *root, SubLink *sublink,
 		/*
 		 * Under certain conditions, we cannot pull up the subquery as a join.
 		 */
-		if (subselect->hasAggs
-			|| (subselect->jointree->fromlist == NULL)
-			|| subselect->havingQual
-			|| subselect->groupClause
-			|| subselect->hasWindowFuncs
-			|| subselect->distinctClause
-			|| subselect->setOperations)
+		if (!is_simple_subquery(root, subselect))
 			return NULL;
 
 		/*

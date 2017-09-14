@@ -41,6 +41,7 @@
 #include "parser/parse_clause.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_func.h"
+#include "rewrite/rewriteManip.h"
 #include "tcop/tcopprot.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
@@ -57,9 +58,9 @@ typedef struct
 	PlannerGlobal *glob;
 	List	   *active_fns;
 	Node	   *case_val;
+	bool		estimate;
 	bool		recurse_queries; /* recurse into query structures */
 	bool		recurse_sublink_testexpr; /* recurse into sublink test expressions */
-	bool		estimate;
 	Size        max_size; /* max constant binary size in bytes, 0: no restrictions */
 } eval_const_expressions_context;
 
@@ -2163,7 +2164,6 @@ eval_const_expressions(PlannerInfo *root, Node *node)
 	}
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
-	context.transform_stable_funcs = true;	/* safe transformations only */
 	context.estimate = false;	/* safe transformations only */
 	context.recurse_queries = false; /* do not recurse into query structures */
 	context.recurse_sublink_testexpr = true;
@@ -2199,7 +2199,6 @@ estimate_expression_value(PlannerInfo *root, Node *node)
 	context.glob = NULL;
 	context.active_fns = NIL;	/* nothing being recursively simplified */
 	context.case_val = NULL;	/* no CASE being examined */
-	context.transform_stable_funcs = true;	/* unsafe transformations OK */
 	context.estimate = true;	/* unsafe transformations OK */
 	context.recurse_queries = false; /* do not recurse into query structures */
 	context.recurse_sublink_testexpr = true;

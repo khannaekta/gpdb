@@ -1147,6 +1147,35 @@ expression_tree_mutator(Node *node,
 				return (Node *) newnode;
 			}
 			break;
+		case T_WindowDef:
+			{
+				WindowDef *windef = (WindowDef *) node;
+				WindowDef *newnode;
+				
+				FLATCOPY(newnode, windef, WindowDef);
+				
+				MUTATE(newnode->partitionClause, windef->partitionClause, List *);
+				MUTATE(newnode->orderClause, windef->orderClause, List *);
+				MUTATE(newnode->startOffset, windef->startOffset, Node *);
+				MUTATE(newnode->endOffset, windef->endOffset, Node *);
+				
+				return (Node *) newnode;
+				
+			}
+		case T_WindowClause:
+			{
+				WindowClause *wc = (WindowClause *) node;
+				WindowClause *newnode;
+				
+				FLATCOPY(newnode, wc, WindowClause);
+				
+				MUTATE(newnode->partitionClause, wc->partitionClause, List *);
+				MUTATE(newnode->orderClause, wc->orderClause, List *);
+				MUTATE(newnode->frame, wc->frame, WindowFrame *);
+				
+				return (Node *) newnode;
+				
+			}
 		case T_PercentileExpr:
 			{
 				PercentileExpr *perc = (PercentileExpr *) node;
