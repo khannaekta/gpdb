@@ -1125,7 +1125,7 @@ explain select * from A where not exists (select sum(C.i) from C where C.i = A.i
                                    QUERY PLAN                                    
 ---------------------------------------------------------------------------------
  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..882688.12 rows=5 width=8)
-   ->  Nested Loop Left Anti Semi Join  (cost=0.00..882688.12 rows=2 width=8)
+   ->  Nested Loop Anti Join  (cost=0.00..882688.12 rows=2 width=8)
          Join Filter: true
          ->  Table Scan on a  (cost=0.00..431.00 rows=2 width=8)
          ->  Result  (cost=0.00..0.00 rows=0 width=1)
@@ -1269,21 +1269,22 @@ explain select C.j from C where not exists (select rank() over (order by B.i) fr
 -----------------------------------------------------------------------------------------------------------------------------------------
  Gather Motion 3:1  (slice2; segments: 3)  (cost=0.00..1324036.36 rows=9 width=4)
    Merge Key: c.j
-   ->  Sort  (cost=0.00..862.00 rows=2 width=4)
-         Sort Key: c.j
-         ->  Hash Anti Join  (cost=0.00..862.00 rows=2 width=4)
-               Hash Cond: c.i = b.i
-               ->  Table Scan on c  (cost=0.00..431.00 rows=3 width=8)
-               ->  Hash  (cost=431.00..431.00 rows=6 width=4)
-                     ->  Broadcast Motion 1:3  (slice2)  (cost=0.00..431.00 rows=18 width=4)
-                           ->  Result  (cost=0.00..431.00 rows=2 width=4)
-                                 ->  Window  (cost=0.00..431.00 rows=2 width=4)
-                                       Order By: b.i
-                                       ->  Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..431.00 rows=6 width=4)
-                                             Merge Key: b.i
-                                             ->  Sort  (cost=0.00..431.00 rows=2 width=4)
-                                                   Sort Key: b.i
-                                                   ->  Table Scan on b  (cost=0.00..431.00 rows=2 width=4)
+   ->  Result  (cost=0.00..1324036.36 rows=3 width=4)
+         ->  Sort  (cost=0.00..1324036.36 rows=3 width=4)
+               Sort Key: c.j
+               ->  Table Scan on c  (cost=0.00..1324036.36 rows=3 width=4)
+                     Filter: (SubPlan 1)
+                     SubPlan 1
+                       ->  Result  (cost=0.00..431.00 rows=1 width=4)
+                             ->  Window  (cost=0.00..431.00 rows=1 width=4)
+                                   Order By: b.i
+                                   ->  Sort  (cost=0.00..431.00 rows=1 width=4)
+                                         Sort Key: b.i
+                                         ->  Result  (cost=0.00..431.00 rows=1 width=4)
+                                               Filter: $0 = b.i
+                                               ->  Materialize  (cost=0.00..431.00 rows=6 width=4)
+                                                     ->  Broadcast Motion 3:3  (slice1; segments: 3)  (cost=0.00..431.00 rows=6 width=4)
+                                                           ->  Table Scan on b  (cost=0.00..431.00 rows=2 width=4)
  Settings:  optimizer=on
  Optimizer status: PQO version 2.34.0
 (19 rows)
