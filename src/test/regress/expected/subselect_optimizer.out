@@ -686,3 +686,43 @@ select * from int4_tbl o where (f1, f1) in
 (1 row)
 
 reset enable_hashjoin;
+--
+-- check for over-optimization of whole-row Var referencing an Append plan
+--
+explain select (select q from
+         (select 1,2,3 where f1 > 0
+          union all
+          select 4,5,6.0 where f1 <= 0
+         ) q )
+from int4_tbl;
+                                       QUERY PLAN                                       
+----------------------------------------------------------------------------------------
+ Gather Motion 3:1  (slice1; segments: 3)  (cost=0.00..1.07 rows=1 width=4)
+   ->  Seq Scan on int4_tbl  (cost=0.00..1.07 rows=1 width=4)
+         SubPlan 1
+           ->  Subquery Scan q  (cost=0.00..0.07 rows=2 width=32)
+                 ->  Append  (cost=0.00..0.04 rows=1 width=0)
+                       ->  Subquery Scan "*SELECT* 1"  (cost=0.00..0.02 rows=1 width=0)
+                             ->  Result  (cost=0.00..0.01 rows=1 width=0)
+                                   One-Time Filter: $0 > 0
+                       ->  Result  (cost=0.00..0.01 rows=1 width=0)
+                             One-Time Filter: $0 <= 0
+ Settings:  optimizer=on
+ Optimizer status: legacy query optimizer
+(12 rows)
+
+select (select q from
+         (select 1,2,3 where f1 > 0
+          union all
+          select 4,5,6.0 where f1 <= 0
+         ) q )
+from int4_tbl;
+ ?column?  
+-----------
+ (1,2,3)
+ (4,5,6.0)
+ (1,2,3)
+ (4,5,6.0)
+ (4,5,6.0)
+(5 rows)
+

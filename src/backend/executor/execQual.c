@@ -829,7 +829,6 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 {
 	Var		   *variable = (Var *) wrvstate->xprstate.expr;
 	TupleTableSlot *slot;
-	TupleDesc	slot_tupdesc;
 	bool		needslow = false;
 
 	if (isDone)
@@ -904,25 +903,14 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	if (wrvstate->wrv_junkFilter != NULL)
 		slot = ExecFilterJunk(wrvstate->wrv_junkFilter, slot);
 
-	slot_tupdesc = slot->tts_tupleDescriptor;
-
 	/*
-	 * If it's a RECORD Var, we'll use the slot's type ID info.  It's likely
-	 * that the slot's type is also RECORD; if so, make sure it's been
-	 * "blessed", so that the Datum can be interpreted later.
-	 *
 	 * If the Var identifies a named composite type, we must check that the
 	 * actual tuple type is compatible with it.
 	 */
-	if (variable->vartype == RECORDOID)
-	{
-		if (slot_tupdesc->tdtypeid == RECORDOID &&
-			slot_tupdesc->tdtypmod < 0)
-			assign_record_type_typmod(slot_tupdesc);
-	}
-	else
+	if (variable->vartype != RECORDOID)
 	{
 		TupleDesc	var_tupdesc;
+		TupleDesc	slot_tupdesc;
 		int			i;
 
 		/*
@@ -938,6 +926,8 @@ ExecEvalWholeRowVar(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 		 * ExecEvalWholeRowSlow to check (2) for each row.
 		 */
 		var_tupdesc = lookup_rowtype_tupdesc(variable->vartype, -1);
+
+		slot_tupdesc = slot->tts_tupleDescriptor;
 
 		if (var_tupdesc->natts != slot_tupdesc->natts)
 			ereport(ERROR,
@@ -993,8 +983,7 @@ ExecEvalWholeRowFast(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 {
 	Var		   *variable = (Var *) wrvstate->xprstate.expr;
 	TupleTableSlot *slot = econtext->ecxt_scantuple;
-	HeapTuple	tuple;
-	TupleDesc	tupleDesc;
+	TupleDesc	slot_tupdesc;
 	HeapTupleHeader dtuple;
 
 	if (isDone)
@@ -1005,17 +994,24 @@ ExecEvalWholeRowFast(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	if (wrvstate->wrv_junkFilter != NULL)
 		slot = ExecFilterJunk(wrvstate->wrv_junkFilter, slot);
 
-	tuple = ExecFetchSlotHeapTuple(slot);
-	tupleDesc = slot->tts_tupleDescriptor;
+	/*
+	 * If it's a RECORD Var, we'll use the slot's type ID info.  It's likely
+	 * that the slot's type is also RECORD; if so, make sure it's been
+	 * "blessed", so that the Datum can be interpreted later.  (Note: we must
+	 * do this here, not in ExecEvalWholeRowVar, because some plan trees may
+	 * return different slots at different times.  We have to be ready to
+	 * bless additional slots during the run.)
+	 */
+	slot_tupdesc = slot->tts_tupleDescriptor;
+	if (variable->vartype == RECORDOID &&
+		slot_tupdesc->tdtypeid == RECORDOID &&
+		slot_tupdesc->tdtypmod < 0)
+		assign_record_type_typmod(slot_tupdesc);
 
 	/*
-	 * We have to make a copy of the tuple so we can safely insert the Datum
-	 * overhead fields, which are not set in on-disk tuples.
+	 * Copy the slot tuple and make sure any toasted fields get detoasted.
 	 */
-	dtuple = (HeapTupleHeader) palloc(tuple->t_len);
-	memcpy((char *) dtuple, (char *) tuple->t_data, tuple->t_len);
-
-	HeapTupleHeaderSetDatumLength(dtuple, tuple->t_len);
+	dtuple = DatumGetHeapTupleHeader(ExecFetchSlotTupleDatum(slot));
 
 	/*
 	 * If the Var identifies a named composite type, label the tuple with that
@@ -1025,11 +1021,6 @@ ExecEvalWholeRowFast(WholeRowVarExprState *wrvstate, ExprContext *econtext,
 	{
 		HeapTupleHeaderSetTypeId(dtuple, variable->vartype);
 		HeapTupleHeaderSetTypMod(dtuple, variable->vartypmod);
-	}
-	else
-	{
-		HeapTupleHeaderSetTypeId(dtuple, tupleDesc->tdtypeid);
-		HeapTupleHeaderSetTypMod(dtuple, tupleDesc->tdtypmod);
 	}
 
 	return PointerGetDatum(dtuple);
