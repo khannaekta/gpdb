@@ -1278,7 +1278,6 @@ _outArrayRef(StringInfo str, ArrayRef *node)
 	WRITE_NODE_FIELD(refassgnexpr);
 }
 
-#ifndef COMPILING_BINARY_FUNCS
 static void
 _outFuncExpr(StringInfo str, FuncExpr *node)
 {
@@ -1287,11 +1286,11 @@ _outFuncExpr(StringInfo str, FuncExpr *node)
 	WRITE_OID_FIELD(funcid);
 	WRITE_OID_FIELD(funcresulttype);
 	WRITE_BOOL_FIELD(funcretset);
+	WRITE_BOOL_FIELD(funcvariadic);
 	WRITE_ENUM_FIELD(funcformat, CoercionForm);
 	WRITE_NODE_FIELD(args);
 	WRITE_BOOL_FIELD(is_tablefunc);  /* GPDB */
 }
-#endif /* COMPILING_BINARY_FUNCS */
 
 static void
 _outOpExpr(StringInfo str, OpExpr *node)
