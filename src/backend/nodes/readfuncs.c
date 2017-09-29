@@ -1074,6 +1074,7 @@ _readFuncCall(void)
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(agg_order);
 	READ_NODE_FIELD(agg_filter);
+	READ_BOOL_FIELD(agg_within_group);
 	READ_BOOL_FIELD(agg_star);
 	READ_BOOL_FIELD(agg_distinct);
 	READ_BOOL_FIELD(func_variadic);
@@ -1254,12 +1255,14 @@ _readAggref(void)
 
 	READ_OID_FIELD(aggfnoid);
 	READ_OID_FIELD(aggtype);
+	READ_NODE_FIELD(aggdirectargs);
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(aggorder);
 	READ_NODE_FIELD(aggdistinct);
 	READ_NODE_FIELD(aggfilter);
 	READ_BOOL_FIELD(aggstar);
 	READ_BOOL_FIELD(aggvariadic);
+	READ_CHAR_FIELD(aggkind);
 	READ_ENUM_FIELD(aggstage, AggStage);
 	READ_UINT_FIELD(agglevelsup);
 	READ_LOCATION_FIELD(location);
@@ -2380,7 +2383,6 @@ _readDefineStmt(void)
 	READ_NODE_FIELD(defnames);
 	READ_NODE_FIELD(args);
 	READ_NODE_FIELD(definition);
-	READ_BOOL_FIELD(ordered);   /* CDB */
 	READ_BOOL_FIELD(trusted);   /* CDB */
 
 	READ_DONE();
