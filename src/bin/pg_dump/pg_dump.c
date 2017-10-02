@@ -9081,6 +9081,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	int			ntups;
 	int			i_aggtransfn;
 	int			i_aggfinalfn;
+	int			i_aggfinalextra;
 	int			i_aggsortop;
 	int			i_hypothetical;
 	int			i_aggtranstype;
@@ -9090,6 +9091,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	int			i_aggordered;
 	const char *aggtransfn;
 	const char *aggfinalfn;
+	bool		aggfinalextra;
 	const char *aggsortop;
 	bool		hypothetical;
 	const char *aggtranstype;
@@ -9116,6 +9118,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
+						  "aggfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "(aggkind = 'h') as hypothetical, " /* aggkind was backported to GPDB6 */
 						  "agginitval, "
@@ -9132,6 +9135,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(query, "SELECT aggtransfn, "
 						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
+						  "false AS aggfinalextra, "
 						  "aggsortop::pg_catalog.regoperator, "
 						  "false as hypothetical, "
 						  "agginitval, "
@@ -9139,21 +9143,6 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 						  "'t'::boolean as convertok, "
 						  "pg_catalog.pg_get_function_arguments(p.oid) AS funcargs, "
 						  "pg_catalog.pg_get_function_identity_arguments(p.oid) AS funciargs, "
-						  "aggordered "
-					  "from pg_catalog.pg_aggregate a, pg_catalog.pg_proc p "
-						  "where a.aggfnoid = p.oid "
-						  "and p.oid = '%u'::pg_catalog.oid",
-						  (isGPbackend ? "aggprelimfn" : "NULL as aggprelimfn"),
-						  agginfo->aggfn.dobj.catId.oid);
-	}
-	else if (g_fout->remoteVersion >= 80100)
-	{
-		appendPQExpBuffer(query, "SELECT aggtransfn, "
-						  "aggfinalfn, aggtranstype::pg_catalog.regtype, "
-						  "aggsortop::pg_catalog.regoperator, "
-						  "agginitval, "
-						  "%s, "
-						  "'t'::boolean as convertok, "
 						  "aggordered "
 					  "from pg_catalog.pg_aggregate a, pg_catalog.pg_proc p "
 						  "where a.aggfnoid = p.oid "
@@ -9180,6 +9169,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 
 	i_aggtransfn = PQfnumber(res, "aggtransfn");
 	i_aggfinalfn = PQfnumber(res, "aggfinalfn");
+	i_aggfinalextra = PQfnumber(res, "aggfinalextra");
 	i_aggsortop = PQfnumber(res, "aggsortop");
 	i_hypothetical = PQfnumber(res, "hypothetical");
 	i_aggtranstype = PQfnumber(res, "aggtranstype");
@@ -9190,6 +9180,7 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 
 	aggtransfn = PQgetvalue(res, 0, i_aggtransfn);
 	aggfinalfn = PQgetvalue(res, 0, i_aggfinalfn);
+	aggfinalextra = (PQgetvalue(res, 0, i_aggfinalextra)[0] == 't');
 	aggsortop = PQgetvalue(res, 0, i_aggsortop);
 	hypothetical = (PQgetvalue(res, 0, i_hypothetical)[0] == 't');
 	aggtranstype = PQgetvalue(res, 0, i_aggtranstype);
@@ -9251,6 +9242,8 @@ dumpAgg(Archive *fout, AggInfo *agginfo)
 	{
 		appendPQExpBuffer(details, ",\n    FINALFUNC = %s",
 						  aggfinalfn);
+		if (aggfinalextra)
+			appendPQExpBufferStr(details, ",\n    FINALFUNC_EXTRA");
 	}
 
 	aggsortop = convertOperatorReference(aggsortop);
