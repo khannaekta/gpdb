@@ -1630,17 +1630,16 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				 */
 				if (list_length(parse->distinctClause) > list_length(parse->sortClause))
 					sort_pathkeys =
-							make_pathkeys_for_sortclauses(root,
-														  parse->distinctClause,
-														  result_plan->targetlist,
-														  true);
+						make_pathkeys_for_sortclauses(root,
+													  parse->distinctClause,
+													  result_plan->targetlist,
+													  true);
 				else
 					sort_pathkeys =
-							make_pathkeys_for_sortclauses(root,
-														  parse->sortClause,
-														  result_plan->targetlist,
-														  true);
-
+						make_pathkeys_for_sortclauses(root,
+													  parse->sortClause,
+													  result_plan->targetlist,
+													  true);
 				sort_pathkeys = canonicalize_pathkeys(root, sort_pathkeys);
 			}
 		}

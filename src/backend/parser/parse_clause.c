@@ -2536,7 +2536,7 @@ transformWindowDefinitions(ParseState *pstate,
  * 		transform DISTINCT clause to GROUP-BY clause
  *
  */
-static List *
+List *
 transformDistinctToGroupBy(ParseState *pstate, List **targetlist,
 							List *sortClause, List **groupClause)
 {
@@ -2618,7 +2618,7 @@ transformDistinctToGroupBy(ParseState *pstate, List **targetlist,
  */
 List *
 transformDistinctClause(ParseState *pstate, List *distinctlist,
-						List **targetlist, List *sortClause, List **groupClause)
+						List **targetlist, List *sortClause)
 {
 	List	   *result = NIL;
 	ListCell   *slitem;
@@ -2632,17 +2632,6 @@ transformDistinctClause(ParseState *pstate, List *distinctlist,
 	if (linitial(distinctlist) == NULL)
 	{
 		/* We had SELECT DISTINCT */
-
-		if (!pstate->p_hasAggs && !pstate->p_hasWindowFuncs && *groupClause == NIL)
-		{
-			/*
-			 * MPP-15040
-			 * turn distinct clause into grouping clause to make both sort-based
-			 * and hash-based grouping implementations viable plan options
-			 */
-
-			return transformDistinctToGroupBy(pstate, targetlist, sortClause, groupClause);
-		}
 
 		/*
 		 * The distinctClause should consist of all ORDER BY items followed
@@ -2775,7 +2764,6 @@ transformDistinctClause(ParseState *pstate, List *distinctlist,
 						 errmsg("SELECT DISTINCT ON expressions must match initial ORDER BY expressions")));
 
 			SortBy sortby;
-
 			sortby.type = T_SortBy;
 			sortby.sortby_dir = SORTBY_DEFAULT;
 			sortby.sortby_nulls = SORTBY_NULLS_DEFAULT;
@@ -2845,7 +2833,7 @@ transformScatterClause(ParseState *pstate,
  * pstate should be provided if resolveUnknown is TRUE, but can be NULL
  * otherwise.
  *
- * Returns the updated ORDER BY list.
+ * Returns the updated SortClause list.
  * May modify targetlist entry in place even when resolveUnknown is FALSE.
  */
 List *

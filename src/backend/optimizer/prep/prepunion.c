@@ -812,21 +812,22 @@ generate_setop_sortlist(List *targetlist)
 	foreach(l, targetlist)
 	{
 		TargetEntry *tle = (TargetEntry *) lfirst(l);
-		SortBy sortby;
-
-		/* GPDB_84_MERGE_FIXME: ensure that this block is deleted in a future
-		 * 8.4 merge iteration. */
-		sortby.type = T_SortBy;
-		sortby.sortby_dir = SORTBY_DEFAULT;
-		sortby.sortby_nulls = SORTBY_NULLS_DEFAULT;
-		sortby.useOp = NIL;
-		sortby.location = -1;
-		sortby.node = (Node *) tle->expr;
 
 		if (!tle->resjunk)
+		{
+			SortBy		sortby;
+
+			sortby.type = T_SortBy;
+			sortby.sortby_dir = SORTBY_DEFAULT;
+			sortby.sortby_nulls = SORTBY_NULLS_DEFAULT;
+			sortby.useOp = NIL;
+			sortby.location = -1;
+			sortby.node = (Node *) tle->expr;
+
 			sortlist = addTargetToSortList(NULL, tle,
 										   sortlist, targetlist,
 										   &sortby, false);
+		}
 	}
 	return sortlist;
 }
