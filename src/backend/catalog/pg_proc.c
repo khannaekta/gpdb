@@ -76,7 +76,7 @@ ProcedureCreate(const char *procedureName,
 				const char *prosrc,
 				const char *probin,
 				bool isAgg,
-				bool isWin,
+				bool isWindowFunc,
 				bool security_definer,
 				bool isStrict,
 				char volatility,
@@ -288,6 +288,12 @@ ProcedureCreate(const char *procedureName,
 		}
 	}
 
+	/* Guard against a case the planner doesn't handle yet */
+	if (isWindowFunc && parameterDefaults != NIL)
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("window functions cannot have default arguments")));
+
 	/*
 	 * All seems OK; prepare the data to be inserted into pg_proc.
 	 */
@@ -308,7 +314,7 @@ ProcedureCreate(const char *procedureName,
 	values[Anum_pg_proc_prorows - 1] = Float4GetDatum(prorows);
 	values[Anum_pg_proc_provariadic - 1] = ObjectIdGetDatum(variadicType);
 	values[Anum_pg_proc_proisagg - 1] = BoolGetDatum(isAgg);
-	values[Anum_pg_proc_proiswindow - 1] = BoolGetDatum(isWin);
+	values[Anum_pg_proc_proiswindow - 1] = BoolGetDatum(isWindowFunc);
 	values[Anum_pg_proc_prosecdef - 1] = BoolGetDatum(security_definer);
 	values[Anum_pg_proc_proisstrict - 1] = BoolGetDatum(isStrict);
 	values[Anum_pg_proc_proretset - 1] = BoolGetDatum(returnsSet);
@@ -520,7 +526,7 @@ ProcedureCreate(const char *procedureName,
 						 errmsg("function \"%s\" is not an aggregate",
 								procedureName)));
 		}
-		if (oldproc->proiswindow != isWin)
+		if (oldproc->proiswindow != isWindowFunc)
 		{
 			if (oldproc->proiswindow)
 				ereport(ERROR,
