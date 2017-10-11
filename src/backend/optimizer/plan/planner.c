@@ -2294,11 +2294,12 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					{
 						if (!pathkeys_contained_in(sort_pathkeys, current_pathkeys))
 						{
-							result_plan = (Plan *) make_sort_from_pathkeys(root,
-																		   result_plan,
-																		   sort_pathkeys,
-																		   limit_tuples,
-																		   true);
+							result_plan = (Plan *)
+								make_sort_from_pathkeys(root,
+														result_plan,
+														sort_pathkeys,
+														limit_tuples,
+														true);
 							((Sort *) result_plan)->noduplicates = gp_enable_sort_distinct;
 							current_pathkeys = sort_pathkeys;
 							mark_sort_locus(result_plan);
