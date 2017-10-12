@@ -1266,7 +1266,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	Plan	   *result_plan;
 	List	   *current_pathkeys = NIL;
 	CdbPathLocus current_locus;
-	List	   *sort_pathkeys;
 	Path	   *best_path = NULL;
 	double		dNumGroups = 0;
 	double		numDistinct = 1;
@@ -1350,16 +1349,15 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * Calculate pathkeys that represent result ordering requirements
 		 */
 		Assert(parse->distinctClause == NIL);
-		sort_pathkeys = make_pathkeys_for_sortclauses(root,
-													  parse->sortClause,
-													  tlist,
-													  true);
+		root->sort_pathkeys = make_pathkeys_for_sortclauses(root,
+															parse->sortClause,
+															tlist,
+															true);
 	}
 	else
 	{
 		/* No set operations, do regular planning */
 		List	   *sub_tlist;
-		List	   *group_pathkeys;
 		AttrNumber *groupColIdx = NULL;
 		Oid		   *groupOperators = NULL;
 		bool		need_tlist_eval = true;
@@ -1540,9 +1538,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		query_planner(root, sub_tlist, tuple_fraction, limit_tuples,
 					  &cheapest_path, &sorted_path, &dNumGroups);
 
-		group_pathkeys = root->group_pathkeys;
-		sort_pathkeys = root->sort_pathkeys;
-
 		/*
 		 * If grouping, extract the grouping operators and decide whether we
 		 * want to use hashed grouping.
@@ -1641,18 +1636,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				 * current sort_pathkeys invalid.
 				 */
 				if (list_length(parse->distinctClause) > list_length(parse->sortClause))
-					sort_pathkeys =
+					root->sort_pathkeys =
 						make_pathkeys_for_sortclauses(root,
 													  parse->distinctClause,
 													  result_plan->targetlist,
 													  true);
 				else
-					sort_pathkeys =
+					root->sort_pathkeys =
 						make_pathkeys_for_sortclauses(root,
 													  parse->sortClause,
 													  result_plan->targetlist,
 													  true);
-				sort_pathkeys = canonicalize_pathkeys(root, sort_pathkeys);
 			}
 		}
 		else	/* Not GP_ROLE_DISPATCH */
@@ -1708,7 +1702,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 
 			/* Detect if we'll need an explicit sort for grouping */
 			if (parse->groupClause && !use_hashed_grouping &&
-				!pathkeys_contained_in(group_pathkeys, current_pathkeys))
+				!pathkeys_contained_in(root->group_pathkeys, current_pathkeys))
 			{
 				need_sort_for_grouping = true;
 
@@ -1838,7 +1832,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 													 groupColIdx,
 													 false,
 													 result_plan);
-						current_pathkeys = group_pathkeys;
+						current_pathkeys = root->group_pathkeys;
 
 						/* Decorate the Sort node with a Flow node. */
 						mark_sort_locus(result_plan);
@@ -1936,12 +1930,13 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					 * which makes the current sort_pathkeys invalid.
 					 */
 					if (list_length(parse->distinctClause) > list_length(parse->sortClause))
-						sort_pathkeys = make_pathkeys_for_sortclauses(root, parse->distinctClause,
-																	  result_plan->targetlist, true);
+						root->sort_pathkeys =
+							make_pathkeys_for_sortclauses(root, parse->distinctClause,
+														  result_plan->targetlist, true);
 					else
-						sort_pathkeys = make_pathkeys_for_sortclauses(root, parse->sortClause,
-																	  result_plan->targetlist, true);
-					sort_pathkeys = canonicalize_pathkeys(root, sort_pathkeys);
+						root->sort_pathkeys =
+							make_pathkeys_for_sortclauses(root, parse->sortClause,
+														  result_plan->targetlist, true);
 					CdbPathLocus_MakeNull(&current_locus);
 				}
 			}
@@ -2290,18 +2285,18 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 					 * Reduce the number of rows to move by adding a [Sort
 					 * and] Unique prior to the redistribute Motion.
 					 */
-					if (sort_pathkeys)
+					if (root->sort_pathkeys)
 					{
-						if (!pathkeys_contained_in(sort_pathkeys, current_pathkeys))
+						if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
 						{
 							result_plan = (Plan *)
 								make_sort_from_pathkeys(root,
 														result_plan,
-														sort_pathkeys,
+														root->sort_pathkeys,
 														limit_tuples,
 														true);
 							((Sort *) result_plan)->noduplicates = gp_enable_sort_distinct;
-							current_pathkeys = sort_pathkeys;
+							current_pathkeys = root->sort_pathkeys;
 							mark_sort_locus(result_plan);
 						}
 					}
@@ -2353,17 +2348,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 	 * an explicit sort step.  Note that, if we going to add a Unique node,
 	 * the sort_pathkeys will have the distinct keys as a prefix.
 	 */
-	if (sort_pathkeys)
+	if (root->sort_pathkeys)
 	{
-		if (!pathkeys_contained_in(sort_pathkeys, current_pathkeys))
+		if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
 		{
 			result_plan = (Plan *) make_sort_from_pathkeys(root,
 														   result_plan,
-														   sort_pathkeys,
+														   root->sort_pathkeys,
 														limit_tuples, false);
 			if (result_plan == NULL)
 				elog(ERROR, "could not find sort pathkeys in result target list");
-			current_pathkeys = sort_pathkeys;
+			current_pathkeys = root->sort_pathkeys;
 			mark_sort_locus(result_plan);
 		}
 
@@ -2397,7 +2392,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			!parse->limitCount && !parse->limitOffset)
 		{
 			result_plan = (Plan *) make_motion_gather(root, result_plan, -1,
-													  sort_pathkeys);
+													  root->sort_pathkeys);
 		}
 	}
 
@@ -2438,7 +2433,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			 */
 			if (parse->sortClause)
 			{
-				if (!pathkeys_contained_in(sort_pathkeys, current_pathkeys))
+				if (!pathkeys_contained_in(root->sort_pathkeys, current_pathkeys))
 					elog(ERROR, "invalid result order generated for ORDER BY + LIMIT");
 				result_plan = (Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
 			}
