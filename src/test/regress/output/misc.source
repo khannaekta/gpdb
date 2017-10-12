@@ -649,6 +649,7 @@ SELECT user_relns() AS user_relns
  tab1
  tab2
  tenk1
+ tenk1
  tenk2
  test_tsvector
  text_tbl
@@ -660,7 +661,7 @@ SELECT user_relns() AS user_relns
  toyemp
  usr_define_type
  varchar_tbl
-(157 rows)
+(158 rows)
 
 SELECT name(equipment(hobby_construct(text 'skywalking', text 'mer')));
  name 
