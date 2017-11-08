@@ -334,16 +334,6 @@ DATA(insert OID = 3333 ( min  PGNSP PGUID 12 1 0 0 t f f f f i 1 0 3310 "3310" _
 /* array_sum(_int4) => _int4 */ 
 DATA(insert OID = 6013 ( array_sum  PGNSP PGUID 12 1 0 0 t f f f f i 1 0 1007 "1007" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ n a ));
 
-/*- */
-/* generate_series("timestamp", "timestamp", "interval") => SETOF "timestamp" */ 
-DATA(insert OID = 6113 ( generate_series  PGNSP PGUID 12 1 1000 0 f f f t t v 3 0 1114 "1114 1114 1186" _null_ _null_ _null_ _null_ generate_series_timestamp _null_ _null_ _null_ n a ));
-DESCR("non-persistent series generator");
-
-/* generate_series("timestamptz", "timestamptz", "interval") => SETOF "timestamptz" */ 
-DATA(insert OID = 6114 ( generate_series  PGNSP PGUID 12 1 1000 0 f f f t t v 3 0 1184 "1184 1184 1186" _null_ _null_ _null_ _null_ generate_series_timestamptz _null_ _null_ _null_ n a ));
-DESCR("non-persistent series generator");
-
-
 /* Greenplum Analytic functions */
 /* int2_matrix_accum(_int8, _int2) => _int8 */ 
 DATA(insert OID = 3212 ( int2_matrix_accum  PGNSP PGUID 12 1 0 0 f f f f f i 2 0 1016 "1016 1005" _null_ _null_ _null_ _null_ matrix_add _null_ _null_ _null_ n a ));

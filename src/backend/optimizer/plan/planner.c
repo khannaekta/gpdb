@@ -1705,19 +1705,6 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				!pathkeys_contained_in(root->group_pathkeys, current_pathkeys))
 			{
 				need_sort_for_grouping = true;
-
-				/*
-				 * Always override create_plan's tlist, so that we don't
-				 * sort useless data from a "physical" tlist.
-				 */
-				need_tlist_eval = true;
-			}
-
-			/* Detect if we'll need an explicit sort for grouping */
-			if (parse->groupClause && !use_hashed_grouping &&
-				!pathkeys_contained_in(group_pathkeys, current_pathkeys))
-			{
-				need_sort_for_grouping = true;
 				/*
 				 * Always override query_planner's tlist, so that we don't
 				 * sort useless data from a "physical" tlist.
