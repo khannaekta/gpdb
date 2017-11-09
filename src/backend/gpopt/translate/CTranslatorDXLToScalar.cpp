@@ -789,7 +789,7 @@ CTranslatorDXLToScalar::TranslateSubplanParams
                 IMDId *pmdidType = pmecolidparamid->PmdidType();
                 pmdidType->AddRef();
 
-                CDXLScalarIdent *pdxlopIdent = GPOS_NEW(m_pmp) CDXLScalarIdent(m_pmp, pdxlcr, pmdidType);
+                CDXLScalarIdent *pdxlopIdent = GPOS_NEW(m_pmp) CDXLScalarIdent(m_pmp, pdxlcr, pmdidType, -1); // 151341024_CHG_TYPMOD
                 Expr *parg = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlopIdent);
 
                 // not found in mapping, it must be an external parameter

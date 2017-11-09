@@ -1600,8 +1600,8 @@ CTranslatorQueryToDXL::PdxlnWindow
 																					m_pmp,
 																					GPOS_NEW(m_pmp) CMDName(m_pmp, pmdnameAlias->Pstr()), ulColId
 																					),
-																		GPOS_NEW(m_pmp) CMDIdGPDB(gpdb::OidExprType((Node*) pte->expr))
-																		)
+																		GPOS_NEW(m_pmp) CMDIdGPDB(gpdb::OidExprType((Node*) pte->expr)), -1
+																		) // 151341024_CHG_TYPMOD
 															);
 				pdxlnPrElNew->AddChild(pdxlnPrElNewChild);
 				pdxlnPrL->AddChild(pdxlnPrElNew);
@@ -3921,7 +3921,7 @@ CTranslatorQueryToDXL::PdrgpdxlnConstructOutputCols
 												(
 												m_pmp,
 												pdxlcr,
-												GPOS_NEW(m_pmp) CMDIdGPDB(gpdb::OidExprType( (Node*) pte->expr))
+												GPOS_NEW(m_pmp) CMDIdGPDB(gpdb::OidExprType( (Node*) pte->expr)), -1 //151341024_CHG_TYPMOD
 												);
 
 		// create the DXL node holding the scalar ident operator
@@ -3957,6 +3957,7 @@ CTranslatorQueryToDXL::PdxlnPrEFromGPDBExpr
 
 	// get the id and alias for the proj elem
 	ULONG ulPrElId;
+	INT iTypMod = -1;
 	CMDName *pmdnameAlias = NULL;
 
 	if (NULL == szAliasName)
@@ -3977,6 +3978,7 @@ CTranslatorQueryToDXL::PdxlnPrEFromGPDBExpr
 		GPOS_ASSERT(EdxlopScalarIdent == pdxlnChild->Pdxlop()->Edxlop());
 		CDXLScalarIdent *pdxlopIdent = (CDXLScalarIdent *) pdxlnChild->Pdxlop();
 		ulPrElId = pdxlopIdent->Pdxlcr()->UlID();
+		iTypMod = pdxlopIdent->ItypMod();
 	}
 	else
 	{
@@ -3984,7 +3986,7 @@ CTranslatorQueryToDXL::PdxlnPrEFromGPDBExpr
 		ulPrElId = m_pidgtorCol->UlNextId();
 	}
 
-	CDXLNode *pdxlnPrEl = GPOS_NEW(m_pmp) CDXLNode(m_pmp, GPOS_NEW(m_pmp) CDXLScalarProjElem(m_pmp, ulPrElId, pmdnameAlias));
+	CDXLNode *pdxlnPrEl = GPOS_NEW(m_pmp) CDXLNode(m_pmp, GPOS_NEW(m_pmp) CDXLScalarProjElem(m_pmp, ulPrElId, pmdnameAlias, iTypMod));
 	pdxlnPrEl->AddChild(pdxlnChild);
 
 	return pdxlnPrEl;

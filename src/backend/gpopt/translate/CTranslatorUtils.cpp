@@ -174,6 +174,8 @@ CTranslatorUtils::Pdxltabdesc
 		CMDName *pmdnameCol = GPOS_NEW(pmp) CMDName(pmp, pmdcol->Mdname().Pstr());
 		CMDIdGPDB *pmdidColType = CMDIdGPDB::PmdidConvert(pmdcol->PmdidType());
 		pmdidColType->AddRef();
+		
+		//INT coltypmod =
 
 		// create a column descriptor for the column
 		CDXLColDescr *pdxlcd = GPOS_NEW(pmp) CDXLColDescr
@@ -1647,7 +1649,7 @@ CTranslatorUtils::PdxlnDummyPrElem
 	// create a column reference for the scalar identifier to be casted
 	CMDName *pmdname = GPOS_NEW(pmp) CMDName(pmp, pdxlcdOutput->Pmdname()->Pstr());
 	CDXLColRef *pdxlcr = GPOS_NEW(pmp) CDXLColRef(pmp, pmdname, ulColIdInput);
-	CDXLScalarIdent *pdxlopIdent = GPOS_NEW(pmp) CDXLScalarIdent(pmp, pdxlcr, pmdidCopy);
+	CDXLScalarIdent *pdxlopIdent = GPOS_NEW(pmp) CDXLScalarIdent(pmp, pdxlcr, pmdidCopy, -1); // 151341024_CHG_TYPMOD
 
 	CDXLNode *pdxlnPrEl = GPOS_NEW(pmp) CDXLNode
 										(
