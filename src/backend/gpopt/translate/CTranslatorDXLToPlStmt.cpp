@@ -2283,6 +2283,8 @@ CTranslatorDXLToPlStmt::PwindowFromDXLWindow
 	pwindow->partNumCols = pdrpulPartCols->UlLength();
 	pwindow->partColIdx = NULL;
 	pwindow->partOperators = NULL;
+	pwindow->firstOrderCol = -1;
+	pwindow->firstOrderCmpOperator = InvalidOid;
 
 	if (pwindow->partNumCols > 0)
 	{
@@ -2330,7 +2332,7 @@ CTranslatorDXLToPlStmt::PwindowFromDXLWindow
 		pwindow->ordNumCols = ulNumCols;
 		pwindow->ordColIdx = (AttrNumber *) gpdb::GPDBAlloc(ulNumCols * sizeof(AttrNumber));
 		pwindow->ordOperators = (Oid *) gpdb::GPDBAlloc(ulNumCols * sizeof(Oid));
-		TranslateSortCols(pdxlnSortColList, &dxltrctxChild, pwindow->ordColIdx, pwindow->ordOperators);
+		TranslateOrdCols(pdxlnSortColList, &dxltrctxChild, pwindow->ordColIdx, pwindow->ordOperators, &pwindow->firstOrderCol, &pwindow->firstOrderCmpOperator);
 
 		// translate the window frame specified in the window key
 		if (NULL != pdxlwindowkey->Pdxlwf())
@@ -4756,6 +4758,51 @@ CTranslatorDXLToPlStmt::TranslateSortCols
 
 		pattnoSortColIds[ul] = pteSortCol->resno;
 		poidSortOpIds[ul] = CMDIdGPDB::PmdidConvert(pdxlopSortCol->PmdidSortOp())->OidObjectId();
+		if (pboolNullsFirst)
+		{
+			pboolNullsFirst[ul] = pdxlopSortCol->FSortNullsFirst();
+		}
+	}
+}
+
+//		Translates DXL ordering columns list into GPDB's arrays of sorting attribute numbers,
+//		and sorting operator ids, respectively.
+//		The two arrays must be allocated by the caller.
+void
+CTranslatorDXLToPlStmt::TranslateOrdCols
+(
+	const CDXLNode *pdxlnSortColList,
+	const CDXLTranslateContext *pdxltrctxChild,
+	AttrNumber *pattnoSortColIds,
+	Oid *poidSortOpIds,
+    AttrNumber *firstOrdCol,
+    Oid *firstSortOp,
+	bool *pboolNullsFirst
+	)
+{
+	const ULONG ulArity = pdxlnSortColList->UlArity();
+	for (ULONG ul = 0; ul < ulArity; ul++)
+	{
+		CDXLNode *pdxlnSortCol = (*pdxlnSortColList)[ul];
+		CDXLScalarSortCol *pdxlopSortCol = CDXLScalarSortCol::PdxlopConvert(pdxlnSortCol->Pdxlop());
+
+		ULONG ulSortColId = pdxlopSortCol->UlColId();
+		const TargetEntry *pteSortCol = pdxltrctxChild->Pte(ulSortColId);
+		if (NULL  == pteSortCol)
+		{
+			GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiDXL2PlStmtAttributeNotFound, ulSortColId);
+		}
+
+		pattnoSortColIds[ul] = pteSortCol->resno;
+		// Also find the equality operators to use for each partitioning key col.
+		Oid typeId = gpdb::OidExprType((Node *) pteSortCol->expr);
+		poidSortOpIds[ul] = gpdb::OidEqualityOp(typeId);
+
+		if(ul == 0)
+		{
+			*firstOrdCol = pteSortCol->resno;
+			*firstSortOp = CMDIdGPDB::PmdidConvert(pdxlopSortCol->PmdidSortOp())->OidObjectId();
+		}
 		if (pboolNullsFirst)
 		{
 			pboolNullsFirst[ul] = pdxlopSortCol->FSortNullsFirst();

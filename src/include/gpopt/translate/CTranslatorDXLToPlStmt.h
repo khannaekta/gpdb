@@ -604,6 +604,17 @@ namespace gpdxl
 				bool *pboolNullsFirst = NULL
 				);
 
+			void TranslateOrdCols
+				(
+				const CDXLNode *pdxlnSortColList,
+				const CDXLTranslateContext *pdxltrctxChild,
+				AttrNumber *pattnoSortColIds,
+				Oid *poidSortOpIds,
+				AttrNumber *firstOrdCol,
+				Oid *firstOrdSortOp,
+				bool *pboolNullsFirst = NULL
+				);
+
 			List *PlQualFromScalarCondNode
 				(
 				const CDXLNode *pdxlnFilter,
