@@ -612,6 +612,7 @@ namespace gpdxl
 				Oid *poidSortOpIds,
 				AttrNumber *firstOrdCol,
 				Oid *firstOrdSortOp,
+			 	List **plTargetlist,
 				bool *pboolNullsFirst = NULL
 				);
 

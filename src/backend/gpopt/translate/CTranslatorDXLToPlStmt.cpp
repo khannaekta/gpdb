@@ -2332,7 +2332,7 @@ CTranslatorDXLToPlStmt::PwindowFromDXLWindow
 		pwindow->ordNumCols = ulNumCols;
 		pwindow->ordColIdx = (AttrNumber *) gpdb::GPDBAlloc(ulNumCols * sizeof(AttrNumber));
 		pwindow->ordOperators = (Oid *) gpdb::GPDBAlloc(ulNumCols * sizeof(Oid));
-		TranslateOrdCols(pdxlnSortColList, &dxltrctxChild, pwindow->ordColIdx, pwindow->ordOperators, &pwindow->firstOrderCol, &pwindow->firstOrderCmpOperator);
+		TranslateOrdCols(pdxlnSortColList, &dxltrctxChild, pwindow->ordColIdx, pwindow->ordOperators, &pwindow->firstOrderCol, &pwindow->firstOrderCmpOperator, &pplan->targetlist);
 
 		// translate the window frame specified in the window key
 		if (NULL != pdxlwindowkey->Pdxlwf())
@@ -4777,6 +4777,7 @@ CTranslatorDXLToPlStmt::TranslateOrdCols
 	Oid *poidSortOpIds,
     AttrNumber *firstOrdCol,
     Oid *firstSortOp,
+    List **plTargetList,
 	bool *pboolNullsFirst
 	)
 {
@@ -4787,7 +4788,7 @@ CTranslatorDXLToPlStmt::TranslateOrdCols
 		CDXLScalarSortCol *pdxlopSortCol = CDXLScalarSortCol::PdxlopConvert(pdxlnSortCol->Pdxlop());
 
 		ULONG ulSortColId = pdxlopSortCol->UlColId();
-		const TargetEntry *pteSortCol = pdxltrctxChild->Pte(ulSortColId);
+	 	const TargetEntry *pteSortCol = pdxltrctxChild->Pte(ulSortColId);
 		if (NULL  == pteSortCol)
 		{
 			GPOS_RAISE(gpdxl::ExmaDXL, gpdxl::ExmiDXL2PlStmtAttributeNotFound, ulSortColId);
@@ -4797,7 +4798,10 @@ CTranslatorDXLToPlStmt::TranslateOrdCols
 		// Also find the equality operators to use for each partitioning key col.
 		Oid typeId = gpdb::OidExprType((Node *) pteSortCol->expr);
 		poidSortOpIds[ul] = gpdb::OidEqualityOp(typeId);
-
+		// Add to &pplan->targetlist
+		//pteSortCol->ressortgroupref = 1;
+		*plTargetList = gpdb::PlAppendElement(*plTargetList, (void *) pteSortCol);
+		
 		if(ul == 0)
 		{
 			*firstOrdCol = pteSortCol->resno;
