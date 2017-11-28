@@ -3915,7 +3915,7 @@ CTranslatorQueryToDXL::PdrgpdxlnConstructOutputCols
 		const ULONG ulColId = CTranslatorUtils::UlColId(ulResNo, phmiulAttnoColId);
 
 		// create a column reference
-		CDXLColRef *pdxlcr = GPOS_NEW(m_pmp) CDXLColRef(m_pmp, pmdname, ulColId);
+		CDXLColRef *pdxlcr = GPOS_NEW(m_pmp) CDXLColRef(m_pmp, pmdname, ulColId, gpdb::IExprTypeMod( (Node*) pte->expr));
 		CDXLScalarIdent *pdxlopIdent = GPOS_NEW(m_pmp) CDXLScalarIdent
 												(
 												m_pmp,
