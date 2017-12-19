@@ -27,6 +27,7 @@ all:
 	$(MAKE) -C contrib/pg_upgrade_support all
 	$(MAKE) -C contrib/pg_upgrade all
 	$(MAKE) -C contrib/hstore all
+	$(MAKE) -C contrib/postgres_hyperloglog all
 	$(MAKE) -C contrib/pgcrypto all
 	$(MAKE) -C gpAux/extensions all
 	$(MAKE) -C gpAux/gpperfmon all
@@ -64,6 +65,7 @@ install:
 	$(MAKE) -C contrib/pg_upgrade_support $@
 	$(MAKE) -C contrib/pg_upgrade $@
 	$(MAKE) -C contrib/hstore $@
+	$(MAKE) -C contrib/postgres_hyperloglog $@ 
 	$(MAKE) -C contrib/pgcrypto $@
 	$(MAKE) -C gpMgmt $@
 	$(MAKE) -C gpAux/extensions $@
@@ -100,6 +102,7 @@ installdirs uninstall coverage:
 	$(MAKE) -C contrib/pg_upgrade_support $@
 	$(MAKE) -C contrib/pg_upgrade $@
 	$(MAKE) -C contrib/hstore $@
+	$(MAKE) -C contrib/postgres_hyperloglog $@ 
 	$(MAKE) -C contrib/pgcrypto $@
 
 distprep:
@@ -130,6 +133,7 @@ clean:
 	$(MAKE) -C contrib/pg_upgrade_support $@
 	$(MAKE) -C contrib/pg_upgrade $@
 	$(MAKE) -C contrib/hstore $@
+	$(MAKE) -C contrib/postgres_hyperloglog $@ 
 	$(MAKE) -C contrib/pgcrypto $@
 # leap over gpAux/Makefile into subdirectories to avoid circular dependency.
 # gpAux/Makefile is the entry point for the enterprise build, which ends up
