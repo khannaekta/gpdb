@@ -269,6 +269,7 @@ typedef FormData_pg_statistic *Form_pg_statistic;
  */
 #define STATISTIC_KIND_MCELEM  4
 
+#define STATISTIC_KIND_HLL  5
 
 
 #endif   /* PG_STATISTIC_H */
