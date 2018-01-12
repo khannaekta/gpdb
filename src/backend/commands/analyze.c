@@ -30,6 +30,7 @@
 #include "cdb/cdbpartition.h"
 #include "cdb/cdbtm.h"
 #include "cdb/cdbvars.h"
+#include "commands/analyzeutils.h"
 #include "commands/dbcommands.h"
 #include "commands/vacuum.h"
 #include "executor/executor.h"
@@ -48,6 +49,7 @@
 #include "utils/builtins.h"
 #include "utils/datum.h"
 #include "utils/guc.h"
+#include "utils/hyperloglog_counter.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/pg_rusage.h"
@@ -553,6 +555,12 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	 * Acquire the sample rows
 	 */
 	// GPDB_90_MERGE_FIXME: Need to implement 'acuire_inherited_sample_rows_by_query'
+	if (needs_sample(vacattrstats, attr_cnt))
+	{
+		/*
+		 * Acquire the sample rows
+		 */
+		// GPDB_90_MERGE_FIXME: Need to implement 'acuire_inherited_sample_rows_by_query'
 #if 0
 	if (inh)
 		numrows = acquire_inherited_sample_rows(onerel, rows, targrows,
@@ -567,13 +575,26 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	/* change the privilige back to the table owner */
 	SetUserIdAndSecContext(onerel->rd_rel->relowner,
 						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+	}
+	else
+	{
+		float4 relTuples;
+		float4 relPages;
+		analyzeEstimateReltuplesRelpages(RelationGetRelid(onerel), &relTuples, &relPages,
+										 vacstmt->options & VACOPT_ROOTONLY);
+		totalrows = relTuples;
+		totalpages = relPages;
+		totaldeadrows = 0;
+		numrows = 0;
+		rows = NULL;
+	}
 	/*
 	 * Compute the statistics.	Temporary results during the calculations for
 	 * each column are stored in a child context.  The calc routines are
 	 * responsible to make sure that whatever they store into the VacAttrStats
 	 * structure is allocated in anl_context.
 	 */
-	if (numrows > 0)
+	if (numrows > 0 || (optimizer_analyze_root_partition && totalrows > 0.0))
 	{
 		HeapTuple *validRows = (HeapTuple *) palloc(numrows * sizeof(HeapTuple));
 		MemoryContext col_context,
@@ -589,6 +610,12 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		for (i = 0; i < attr_cnt; i++)
 		{
 			VacAttrStats *stats = vacattrstats[i];
+			if(stats->merge_stats)
+			{
+				(*stats->compute_stats) (stats, std_fetch_func, 0, 0);
+				MemoryContextResetAndDeleteChildren(col_context);
+				continue;
+			}
 			RowIndexes *rowIndexes = colLargeRowIndexes[i];
 			int validRowsLength = numrows - rowIndexes->toowide_cnt;
 
@@ -1032,13 +1059,23 @@ examine_attribute(Relation onerel, int attnum)
 	 * the type of the field being analyzed, but the type-specific typanalyze
 	 * function can change them if it wants to store something else.
 	 */
-	for (i = 0; i < STATISTIC_NUM_SLOTS; i++)
+	for (i = 0; i < STATISTIC_NUM_SLOTS-1; i++)
 	{
 		stats->statypid[i] = stats->attr->atttypid;
 		stats->statyplen[i] = stats->attrtype->typlen;
 		stats->statypbyval[i] = stats->attrtype->typbyval;
 		stats->statypalign[i] = stats->attrtype->typalign;
 	}
+
+	/*
+	 * The last slot of statistics is reservered for hyperloglog counter which
+	 * is saved as a bytea. Therefore the type inforation is hardcoded for the
+	 * bytea.
+	 */
+	stats->statypid[i] = 17; // oid for bytea
+	stats->statyplen[i] = -1; // variable length type
+	stats->statypbyval[i] = false; // bytea is pass by reference
+	stats->statypalign[i] = 'i'; // INT alignment (4-byte)
 
 	/*
 	 * Call the type-specific typanalyze function.	If none is specified, use
@@ -2379,9 +2416,12 @@ static void compute_scalar_stats(VacAttrStatsP stats,
 					 AnalyzeAttrFetchFunc fetchfunc,
 					 int samplerows,
 					 double totalrows);
+static void merge_leaf_stats(VacAttrStatsP stats,
+								 AnalyzeAttrFetchFunc fetchfunc,
+								 int samplerows,
+								 double totalrows);
 static int	compare_scalars(const void *a, const void *b, void *arg);
 static int	compare_mcvs(const void *a, const void *b);
-
 
 /*
  * std_typanalyze -- the default type-specific typanalyze function
@@ -2410,11 +2450,24 @@ std_typanalyze(VacAttrStats *stats)
 	mystats->eqfunc = get_opcode(eqopr);
 	mystats->ltopr = ltopr;
 	stats->extra_data = mystats;
-
+	stats->merge_stats = false;
 	/*
 	 * Determine which standard statistics algorithm to use
 	 */
-	if (OidIsValid(ltopr) && OidIsValid(eqopr))
+	if (OidIsValid(ltopr) && OidIsValid(eqopr) && rel_part_status(attr->attrelid) == PART_STATUS_ROOT)
+	{
+		/* Seems to be a scalar datatype and root partition*/
+		if(leaf_parts_analyzed(stats))
+		{
+			stats->merge_stats = true;
+			stats->compute_stats = merge_leaf_stats;
+		}
+		else
+			stats->compute_stats = compute_scalar_stats;
+		/* Might as well use the same minrows as below */
+		stats->minrows = 300 * attr->attstattarget;
+	}
+	else if (OidIsValid(ltopr) && OidIsValid(eqopr))
 	{
 		/* Seems to be a scalar datatype */
 		stats->compute_stats = compute_scalar_stats;
@@ -2919,6 +2972,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 	SelectSortFunction(mystats->ltopr, false, &cmpFn, &cmpFlags);
 	fmgr_info(cmpFn, &f_cmpfn);
 
+	stats->stahll = hyperloglog_init_default();
+
 	/* Initial scan to find sortable values */
 	for (i = 0; i < samplerows; i++)
 	{
@@ -2936,6 +2991,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 			continue;
 		}
 		nonnull_cnt++;
+
+		stats->stahll = hyperloglog_add_item(stats->stahll, value, stats->attr->attlen, stats->attr->attbyval, stats->attr->attalign);
 
 		/*
 		 * If it's a variable-width field, add up widths for average width
@@ -3320,6 +3377,23 @@ compute_scalar_stats(VacAttrStatsP stats,
 			slot_idx++;
 		}
 
+		if(stats->stahll != NULL)
+		{
+			MemoryContext old_context;
+			Datum *hll_values;
+
+			old_context = MemoryContextSwitchTo(stats->anl_context);
+			hll_values = (Datum *) palloc(sizeof(Datum));
+
+			int hll_length = hyperloglog_length(stats->stahll);
+			hll_values[0] = datumCopy(PointerGetDatum(stats->stahll), false, hll_length);
+			MemoryContextSwitchTo(old_context);
+			stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_HLL;
+			stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
+			stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
+			stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
+		}
+
 		/* Generate a correlation entry if there are multiple values */
 		/*
 		 * GPDB: Don't calculate correlation for AO-tables, however.
@@ -3390,6 +3464,168 @@ compute_scalar_stats(VacAttrStatsP stats,
 	/* We don't need to bother cleaning up any of our temporary palloc's */
 }
 
+/*
+ *	merge_leaf_stats() -- merge leaf stats for the root
+ *
+ *	We use this when we can find "=" and "<" operators for the datatype.
+ *
+ *	This is only used when the relation is the root partition and merges
+ *	the statistics available in pg_statistic for the leaf partitions.
+ *
+ *	We determine the fraction of non-null rows, the average width, the
+ *	most common values, the (estimated) number of distinct values, the
+ *	distribution histogram.
+ */
+static void
+merge_leaf_stats(VacAttrStatsP stats,
+				 AnalyzeAttrFetchFunc fetchfunc,
+				 int samplerows,
+				 double totalrows)
+{
+	PartitionNode *pn = get_parts(stats->attr->attrelid, 0 /*level*/ ,
+								  0 /*parent*/, false /* inctemplate */, true /*includesubparts*/);
+	Assert(pn);
+
+	List *oid_list = all_leaf_partition_relids(pn); /* all leaves */
+	StdAnalyzeData *mystats = (StdAnalyzeData *)stats->extra_data;
+
+	ListCell *lc;
+	float *relTuples = (float *) palloc(sizeof(float) * list_length(oid_list));
+	int relNum = 0;
+	float totalTuples = 0;
+
+	foreach(lc, oid_list)
+	{
+		Oid pkrelid = lfirst_oid(lc);
+		HeapTuple	pkStatsTuple;
+
+		/* SELECT reltuples FROM pg_class */
+		pkStatsTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(pkrelid));
+		if (HeapTupleIsValid(pkStatsTuple))
+		{
+			Form_pg_class classForm = (Form_pg_class) GETSTRUCT(pkStatsTuple);
+			relTuples[relNum] = classForm->reltuples;
+			totalTuples = totalTuples + classForm->reltuples;
+			relNum++;
+		}
+		ReleaseSysCache(pkStatsTuple);
+	}
+
+	int numPartitions = list_length(oid_list);
+	MemoryContext old_context;
+
+	HeapTuple *heaptupleStats = (HeapTuple *)palloc(numPartitions * sizeof(HeapTuple *));
+
+	// NDV calculations
+	float4 colAvgWidth = 0;
+	float4 nullCount = 0;
+	HLLCounter *hllcounters = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
+	HLLCounter finalHLL = NULL;
+	int i;
+	double ndistinct = 0.0;
+	bool allDistinct = true;
+	for (i = 0; i < numPartitions; i++)
+	{
+		Oid relid = list_nth_oid(oid_list, i);
+		colAvgWidth = colAvgWidth + get_attavgwidth(relid, stats->attr->attnum) * relTuples[i];
+		nullCount = nullCount + get_attnullfrac(relid, stats->attr->attnum) * relTuples[i];
+
+		heaptupleStats[i] = get_att_stats(relid, stats->attr->attnum);
+		// if there is no colstats
+		if (!HeapTupleIsValid(heaptupleStats[i]))
+		{
+			continue;
+		}
+		Form_pg_statistic fpsStats = (Form_pg_statistic) GETSTRUCT(heaptupleStats[i]);
+		if (fpsStats->stadistinct < 0.0 && allDistinct)
+		{
+			continue;
+		}
+		else
+		{
+			allDistinct = false;
+		}
+
+		AttStatsSlot hllSlot;
+		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL, InvalidOid, ATTSTATSSLOT_VALUES);
+
+		if(hllSlot.nvalues > 0)
+		{
+			hllcounters[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
+			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
+			free_attstatsslot(&hllSlot);
+		}
+	}
+
+	if (allDistinct)
+		ndistinct = -1.0;
+
+	if (finalHLL != NULL && !allDistinct)
+		ndistinct = hyperloglog_get_estimate(finalHLL);
+
+	pfree(hllcounters);
+
+	if (ndistinct == 0.0)
+		return;
+
+	if (ndistinct > 0.1 * totalTuples)
+		ndistinct = -(ndistinct / totalTuples);
+
+	// finalize NDV calculation
+	stats->stadistinct = ndistinct ;
+	stats->stats_valid = true;
+	stats->stawidth = colAvgWidth / totalTuples;
+	stats->stanullfrac = (float4)nullCount / (float4)totalTuples;
+
+	// MCV calculations
+	old_context = MemoryContextSwitchTo(stats->anl_context);
+
+	void *resultMCV[2];
+	int num_mcv = aggregate_leaf_partition_MCVs(stats->attr->attrelid,
+												stats->attr->attnum,
+												heaptupleStats,
+												relTuples,
+												default_statistics_target,
+												resultMCV);
+	MemoryContextSwitchTo(old_context);
+
+	if (num_mcv > 0)
+	{
+		stats->stakind[0] = STATISTIC_KIND_MCV;
+		stats->staop[0] = mystats->eqopr;
+		stats->stavalues[0] = (Datum *)resultMCV[0];
+		stats->numvalues[0] = num_mcv;
+		stats->stanumbers[0] = (float4 *)resultMCV[1];
+		stats->numnumbers[0] = num_mcv;
+	}
+
+	// Histogram calculation
+	old_context = MemoryContextSwitchTo(stats->anl_context);
+
+	void *resultHistogram[1];
+	int num_hist = aggregate_leaf_partition_histograms(stats->attr->attrelid,
+													   stats->attr->attnum,
+													   heaptupleStats,
+													   relTuples,
+													   default_statistics_target,
+													   resultHistogram);
+	MemoryContextSwitchTo(old_context);
+	if (num_hist > 0)
+	{
+		stats->stakind[1] = STATISTIC_KIND_HISTOGRAM;
+		stats->staop[1] = mystats->ltopr;
+		stats->stavalues[1] = (Datum *) resultHistogram[0];
+		stats->numvalues[1] = num_hist;
+	}
+
+	for (i = 0; i < numPartitions; i++)
+	{
+		if(HeapTupleIsValid(heaptupleStats[i]))
+			heap_freetuple(heaptupleStats[i]);
+	}
+	pfree(heaptupleStats);
+	pfree(relTuples);
+}
 /*
  * qsort_arg comparator for sorting ScalarItems
  *
