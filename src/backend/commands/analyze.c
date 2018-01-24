@@ -3530,8 +3530,12 @@ merge_leaf_stats(VacAttrStatsP stats,
 	float4 colAvgWidth = 0;
 	float4 nullCount = 0;
 	HLLCounter *hllcounters = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
+	HLLCounter *hllcounters2 = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
+	memset(hllcounters, 0, numPartitions * sizeof(HLLCounter));
+	memset(hllcounters2, 0, numPartitions * sizeof(HLLCounter));
+
 	HLLCounter finalHLL = NULL;
-	int i;
+	int i, j;
 	double ndistinct = 0.0;
 	bool allDistinct = true;
 	for (i = 0; i < numPartitions; i++)
@@ -3567,6 +3571,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		if(hllSlot.nvalues > 0)
 		{
 			hllcounters[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
+			hllcounters2[i] = hll_copy(hllcounters[i]);
 			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
 			nDistincts[i] = hllcounters[i]->ndistinct;
 			nMultiples[i] = hllcounters[i]->nmultiples;
@@ -3577,24 +3582,49 @@ merge_leaf_stats(VacAttrStatsP stats,
 		}
 	}
 
-
-
 	if (finalHLL != NULL && !allDistinct)
 	{
 		ndistinct = hyperloglog_get_estimate(finalHLL);
 		nmultiple = (ndistinct * nmultiple) / nDistinct_upper_bound;
-	}
-	pfree(hllcounters);
 
-	if (ndistinct == 0.0)
-		return;
+		int nUnique = 0;
+		for (i = 0; i < numPartitions; i++)
+		{
+			HLLCounter finalHLL_temp = NULL;
+			for (j = 0; j < numPartitions; j++)
+			{
+				if (i != j && hllcounters2[j] != NULL)
+				{
+					HLLCounter temp_hll_counter = hll_copy(hllcounters2[j]);
+					finalHLL_temp = hyperloglog_merge(finalHLL_temp, temp_hll_counter);
+				}
+			}
+			if (finalHLL_temp != NULL)
+				nUnique += ndistinct - hyperloglog_get_estimate(finalHLL_temp);
+			else
+			{
+				nUnique = ndistinct;
+				break;
+			}
+		}
+		nmultiple += ndistinct - nUnique;
+
+		if (nmultiple < 0)
+		{
+			nmultiple = 0;
+		}
+	}
+
+	pfree(hllcounters);
 
 	if (allDistinct)
 	{
 		/* If we found no repeated values, assume it's a unique column */
 		ndistinct = -1.0;
 	}
-	else if ((int)nmultiple == (int)ndistinct)
+	else if (ndistinct == 0.0)
+		return;
+	else if ((int)nmultiple >= (int)ndistinct)
 	{
 		/*
 		 * Every value in the sample appeared more than once.  Assume the
