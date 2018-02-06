@@ -3409,7 +3409,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 			slot_idx++;
 		}
 
-		if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_INTERIOR)
+		if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
 		{
 			MemoryContext old_context;
 			Datum *hll_values;
@@ -3526,10 +3526,15 @@ merge_leaf_stats(VacAttrStatsP stats,
 	float *relTuples = (float *) palloc(sizeof(float) * numPartitions);
 	float *nDistincts = (float *) palloc(sizeof(float) * numPartitions);
 	float *nMultiples = (float *) palloc(sizeof(float) * numPartitions);
+	float *nUniques = (float *) palloc(sizeof(float) * numPartitions);
+	memset(relTuples, 0, numPartitions * sizeof(float));
+	memset(nDistincts, 0, numPartitions * sizeof(float));
+	memset(nMultiples, 0, numPartitions * sizeof(float));
+	memset(nUniques, 0, numPartitions * sizeof(float));
 	int relNum = 0;
 	float totalTuples = 0;
-	float nDistinct_upper_bound = 0;
 	float nmultiple = 0;
+	bool allDistinct = false;
 	samplerows = 0;
 
 	foreach(lc, oid_list)
@@ -3558,40 +3563,28 @@ merge_leaf_stats(VacAttrStatsP stats,
 	float4 colAvgWidth = 0;
 	float4 nullCount = 0;
 	HLLCounter *hllcounters = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
-	HLLCounter *hllcounters2 = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
+	HLLCounter *hllcounters_copy = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
 	memset(hllcounters, 0, numPartitions * sizeof(HLLCounter));
-	memset(hllcounters2, 0, numPartitions * sizeof(HLLCounter));
+	memset(hllcounters_copy, 0, numPartitions * sizeof(HLLCounter));
 
 	HLLCounter finalHLL = NULL;
 	int i, j;
 	double ndistinct = 0.0;
-	bool allDistinct = true;
 	for (i = 0; i < numPartitions; i++)
 	{
 		Oid relid = list_nth_oid(oid_list, i);
 		colAvgWidth = colAvgWidth + get_attavgwidth(relid, stats->attr->attnum) * relTuples[i];
 		nullCount = nullCount + get_attnullfrac(relid, stats->attr->attnum) * relTuples[i];
 
-		nDistincts[i] = 0.0;
-		nMultiples[i] = 0.0;
-
 		heaptupleStats[i] = get_att_stats(relid, stats->attr->attnum);
-		// if there is no colstats
+
+		// if there is no colstats, we can skip this partition's stats
 		if (!HeapTupleIsValid(heaptupleStats[i]))
 		{
 			continue;
 		}
+
 		Form_pg_statistic fpsStats = (Form_pg_statistic) GETSTRUCT(heaptupleStats[i]);
-		if (fpsStats->stadistinct <= -1.0 && allDistinct)
-		{
-			nDistincts[i] = relTuples[i];
-			nDistinct_upper_bound += nDistincts[i];
-			continue;
-		}
-		else
-		{
-			allDistinct = false;
-		}
 
 		AttStatsSlot hllSlot;
 		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL, InvalidOid, ATTSTATSSLOT_VALUES);
@@ -3599,52 +3592,66 @@ merge_leaf_stats(VacAttrStatsP stats,
 		if(hllSlot.nvalues > 0)
 		{
 			hllcounters[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
-			hllcounters2[i] = hll_copy(hllcounters[i]);
-			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
-			nDistincts[i] = hllcounters[i]->ndistinct;
-			nMultiples[i] = hllcounters[i]->nmultiples;
+			nDistincts[i] = (float)hllcounters[i]->ndistinct;
+			nMultiples[i] = (float)hllcounters[i]->nmultiples;
 			samplerows += hllcounters[i]->samplerows;
-			nDistinct_upper_bound += nDistincts[i];
-			nmultiple += nMultiples[i];
+			hllcounters_copy[i] = hll_copy(hllcounters[i]);
+			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
 			free_attstatsslot(&hllSlot);
 		}
 	}
 
-	if (finalHLL != NULL && !allDistinct)
+	if (finalHLL != NULL)
 	{
 		ndistinct = hyperloglog_get_estimate(finalHLL);
-		nmultiple = (ndistinct * nmultiple) / nDistinct_upper_bound;
-
-		int nUnique = 0;
-		for (i = 0; i < numPartitions; i++)
+		if ( (fabs(samplerows-ndistinct) / (float)samplerows) < 0.05)
 		{
-			HLLCounter finalHLL_temp = NULL;
-			for (j = 0; j < numPartitions; j++)
+			allDistinct = true;
+		}
+		else
+		{
+			int nUnique = 0;
+			for (i = 0; i < numPartitions; i++)
 			{
-				if (i != j && hllcounters2[j] != NULL)
+				if (nDistincts[i] == 0)
+					continue;
+
+				HLLCounter finalHLL_temp = NULL;
+				for (j = 0; j < numPartitions; j++)
 				{
-					HLLCounter temp_hll_counter = hll_copy(hllcounters2[j]);
-					finalHLL_temp = hyperloglog_merge(finalHLL_temp, temp_hll_counter);
+					if (i != j && hllcounters_copy[j] != NULL)
+					{
+						HLLCounter temp_hll_counter = hll_copy(hllcounters_copy[j]);
+						finalHLL_temp = hyperloglog_merge(finalHLL_temp, temp_hll_counter);
+					}
+				}
+				if (finalHLL_temp != NULL)
+				{
+					nUniques[i] = ndistinct - hyperloglog_get_estimate(finalHLL_temp);
+					nUnique += nUniques[i];
+					nmultiple += nMultiples[i] * (nUniques[i] / nDistincts[i]);
+				}
+				else
+				{
+					nUnique = ndistinct;
+					break;
 				}
 			}
-			if (finalHLL_temp != NULL)
-				nUnique += ndistinct - hyperloglog_get_estimate(finalHLL_temp);
-			else
-			{
-				nUnique = ndistinct;
-				break;
-			}
-		}
-		nmultiple += ndistinct - nUnique;
 
-		if (nmultiple < 0)
-		{
-			nmultiple = 0;
+			nmultiple += ndistinct - nUnique;
+
+			if (nmultiple < 0)
+			{
+				nmultiple = 0;
+			}
 		}
 	}
 
 	pfree(hllcounters);
-	pfree(hllcounters2);
+	pfree(hllcounters_copy);
+	pfree(nDistincts);
+	pfree(nMultiples);
+	pfree(nUniques);
 
 	if (allDistinct)
 	{
