@@ -31,5 +31,6 @@ extern int aggregate_leaf_partition_histograms(Oid relationOid,
 											   void **result);
 extern bool needs_sample(VacAttrStats **vacattrstats, int attr_cnt);
 extern bool leaf_parts_analyzed(VacAttrStats *stats);
+extern bool table_analyzed_and_not_changed(Relation onerel);
 
 #endif  /* ANALYZEUTILS_H */
