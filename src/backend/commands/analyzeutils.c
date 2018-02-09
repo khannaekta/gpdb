@@ -118,6 +118,7 @@ static void getHistogramHeapTuple(AttStatsSlot **histSlots,
 		int *numNotNullParts,
 		int nParts);
 static void initDatumHeap(CdbHeap *hp, AttStatsSlot **histSlots, int *cursors, int nParts);
+static void getLeafReltuplesRelpages(Oid singleOid, float4 *relTuples, float4 *relPages);
 
 /* A few variables that don't seem worth passing around as parameters */
 static int	elevel = -1;
@@ -988,4 +989,121 @@ leaf_parts_analyzed(VacAttrStats *stats)
 		return false;
 
 	return true;
+}
+
+/**
+ * This method estimates reltuples/relpages for a relation. To do this, it employs
+ * the built-in function 'gp_statistics_estimate_reltuples_relpages'. If the table to be
+ * analyzed is a system table, then it calculates statistics only using the master.
+ * Input:
+ * 	relationOid - relation's Oid
+ * Output:
+ * 	relTuples - estimated number of tuples
+ * 	relPages  - estimated number of pages
+ */
+static void
+getLeafReltuplesRelpages(Oid singleOid, float4 *relTuples, float4 *relPages)
+{
+	*relPages = 0.0;
+	*relTuples = 0.0;
+
+	StringInfoData	sqlstmt;
+	int			ret;
+	Datum		arrayDatum;
+	bool		isNull;
+	Datum	   *values = NULL;
+	int			valuesLength;
+	
+	initStringInfo(&sqlstmt);
+	
+	if (GpPolicyFetch(CurrentMemoryContext, singleOid)->ptype == POLICYTYPE_ENTRY)
+	{
+		appendStringInfo(&sqlstmt, "select pg_catalog.sum(pg_catalog.gp_statistics_estimate_reltuples_relpages_oid(c.oid))::pg_catalog.float4[] "
+						 "from pg_catalog.pg_class c where c.oid=%d", singleOid);
+	}
+	else
+	{
+		appendStringInfo(&sqlstmt, "select pg_catalog.sum(pg_catalog.gp_statistics_estimate_reltuples_relpages_oid(c.oid))::pg_catalog.float4[] "
+						 "from pg_catalog.gp_dist_random('pg_catalog.pg_class') c where c.oid=%d", singleOid);
+	}
+	
+	if (SPI_OK_CONNECT != SPI_connect())
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+						errmsg("Unable to connect to execute internal query.")));
+	
+	elog(elevel, "Executing SQL: %s", sqlstmt.data);
+	
+	/* Do the query. */
+	ret = SPI_execute(sqlstmt.data, true, 0);
+	Assert(ret > 0);
+	Assert(SPI_tuptable != NULL);
+	Assert(SPI_processed == 1);
+	
+	arrayDatum = heap_getattr(SPI_tuptable->vals[0], 1, SPI_tuptable->tupdesc, &isNull);
+	if (isNull)
+		elog(ERROR, "could not get estimated number of tuples and pages for relation %u", singleOid);
+	
+	deconstruct_array(DatumGetArrayTypeP(arrayDatum),
+					  FLOAT4OID,
+					  sizeof(float4),
+					  true,
+					  'i',
+					  &values, NULL, &valuesLength);
+	Assert(valuesLength == 2);
+	
+	*relTuples += DatumGetFloat4(values[0]);
+	*relPages += DatumGetFloat4(values[1]);
+	
+	SPI_finish();
+	
+	return;
+}
+
+bool
+table_analyzed_and_not_changed(Relation onerel)
+{
+	float4		relTuples = 0;
+	float4		relPages;
+
+	Oid relid = RelationGetRelid(onerel);
+	HeapTuple	pkStatsTuple;
+	HLLCounter  hllcounter;
+
+	if (rel_part_status(relid) != PART_STATUS_LEAF)
+		return false;
+
+	getLeafReltuplesRelpages(relid, &relTuples, &relPages);
+
+	if (relTuples == 0)
+		return false;
+
+	int nAttr = RelationGetNumberOfAttributes(onerel);
+	int i;
+	for (i = 1; i <= nAttr; i++)
+	{
+		HeapTuple heaptupleStats = get_att_stats(relid, i);
+
+		// if there is no colstats
+		if (!HeapTupleIsValid(heaptupleStats))
+		{
+			continue;
+		}
+
+		AttStatsSlot hllSlot;
+		if (!get_attstatsslot(&hllSlot, heaptupleStats, STATISTIC_KIND_HLL, InvalidOid, ATTSTATSSLOT_VALUES))
+			continue;
+		hllcounter = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
+		heap_freetuple(heaptupleStats);
+
+		if (hllcounter == NULL)
+			continue;
+
+		float4 relTuplesSaved = hllcounter->relTuples;
+		free_attstatsslot(&hllSlot);
+		if (fabs(relTuples - relTuplesSaved) < (float)gp_autostats_on_change_threshold)
+			return true;
+		else
+			return false;
+	}
+	return false;
 }

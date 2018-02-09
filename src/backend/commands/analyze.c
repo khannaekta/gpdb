@@ -286,6 +286,12 @@ analyze_rel_internal(Oid relid, VacuumStmt *vacstmt, BufferAccessStrategy bstrat
 		return;
 	}
 
+	if (table_analyzed_and_not_changed(onerel))
+	{
+		relation_close(onerel, ShareUpdateExclusiveLock);
+		return;
+	}
+
 	/*
 	 * OK, let's do it.  First let other backends know I'm in ANALYZE.
 	 */
@@ -3151,6 +3157,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 		stats->stahll->nmultiples = nmultiple;
 		stats->stahll->ndistinct = ndistinct;
 		stats->stahll->samplerows = samplerows;
+		stats->stahll->relTuples = (float4)totalrows;
 
 		if (nmultiple == 0)
 		{
@@ -3583,8 +3590,6 @@ merge_leaf_stats(VacAttrStatsP stats,
 		{
 			continue;
 		}
-
-		Form_pg_statistic fpsStats = (Form_pg_statistic) GETSTRUCT(heaptupleStats[i]);
 
 		AttStatsSlot hllSlot;
 		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL, InvalidOid, ATTSTATSSLOT_VALUES);
