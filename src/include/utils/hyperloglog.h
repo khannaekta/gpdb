@@ -123,6 +123,9 @@ typedef struct HLLData {
 	/* Sample size which based on this counter is created */
 	int32_t samplerows;
 
+	/* Number of tuples in the partition */
+	float4 relTuples;
+
     /* largest observed 'rho' for each of the 'm' buckets (uses the very same 
      * trick  as in the varlena type in include/c.h where additional memory 
      * is palloc'ed and treated as part of the data array ) */
