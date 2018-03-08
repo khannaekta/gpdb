@@ -3681,28 +3681,34 @@ merge_leaf_stats(VacAttrStatsP stats,
 	stats->stanullfrac = (float4)nullCount / (float4)totalTuples;
 
 	// MCV calculations
-	old_context = MemoryContextSwitchTo(stats->anl_context);
-
-	void *resultMCV[2];
-	int num_mcv = aggregate_leaf_partition_MCVs(stats->attr->attrelid,
-												stats->attr->attnum,
-												heaptupleStats,
-												relTuples,
-												default_statistics_target,
-												resultMCV);
-	MemoryContextSwitchTo(old_context);
-
-	if (num_mcv > 0)
+	if(ndistinct > -1)
 	{
-		stats->stakind[slot_idx] = STATISTIC_KIND_MCV;
-		stats->staop[slot_idx] = mystats->eqopr;
-		stats->stavalues[slot_idx] = (Datum *)resultMCV[0];
-		stats->numvalues[slot_idx] = num_mcv;
-		stats->stanumbers[slot_idx] = (float4 *)resultMCV[1];
-		stats->numnumbers[slot_idx] = num_mcv;
-		slot_idx++;
-	}
+		if (ndistinct < 0)
+			ndistinct = -ndistinct * totalTuples;
 
+		old_context = MemoryContextSwitchTo(stats->anl_context);
+
+		void *resultMCV[2];
+		int num_mcv = aggregate_leaf_partition_MCVs(stats->attr->attrelid,
+													stats->attr->attnum,
+													heaptupleStats,
+													relTuples,
+													default_statistics_target,
+													ndistinct,
+													resultMCV);
+		MemoryContextSwitchTo(old_context);
+
+		if (num_mcv > 0)
+		{
+			stats->stakind[slot_idx] = STATISTIC_KIND_MCV;
+			stats->staop[slot_idx] = mystats->eqopr;
+			stats->stavalues[slot_idx] = (Datum *)resultMCV[0];
+			stats->numvalues[slot_idx] = num_mcv;
+			stats->stanumbers[slot_idx] = (float4 *)resultMCV[1];
+			stats->numnumbers[slot_idx] = num_mcv;
+			slot_idx++;
+		}
+	}
 	// Histogram calculation
 	old_context = MemoryContextSwitchTo(stats->anl_context);
 
