@@ -20,6 +20,7 @@ extern int aggregate_leaf_partition_MCVs(Oid relationOid,
 										 HeapTuple *heaptupleStats,
 										 float4 *relTuples,
 										 unsigned int nEntries,
+										 double ndistinct,
 										 void **result);
 extern bool datumCompare(Datum d1, Datum d2, Oid opFuncOid);
 extern float4 get_rel_reltuples(Oid relid);
