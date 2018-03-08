@@ -3542,23 +3542,16 @@ merge_leaf_stats(VacAttrStatsP stats,
 	float totalTuples = 0;
 	float nmultiple = 0;
 	bool allDistinct = false;
+	int slot_idx = 0;
 	samplerows = 0;
 
 	foreach(lc, oid_list)
 	{
 		Oid pkrelid = lfirst_oid(lc);
-		HeapTuple	pkStatsTuple;
 
-		/* SELECT reltuples FROM pg_class */
-		pkStatsTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(pkrelid));
-		if (HeapTupleIsValid(pkStatsTuple))
-		{
-			Form_pg_class classForm = (Form_pg_class) GETSTRUCT(pkStatsTuple);
-			relTuples[relNum] = classForm->reltuples;
-			totalTuples = totalTuples + classForm->reltuples;
-			relNum++;
-		}
-		ReleaseSysCache(pkStatsTuple);
+		relTuples[relNum] = get_rel_reltuples(pkrelid);
+		totalTuples = totalTuples + relTuples[relNum];
+		relNum++;
 	}
 	totalrows = totalTuples;
 
@@ -3729,12 +3722,13 @@ merge_leaf_stats(VacAttrStatsP stats,
 
 	if (num_mcv > 0)
 	{
-		stats->stakind[0] = STATISTIC_KIND_MCV;
-		stats->staop[0] = mystats->eqopr;
-		stats->stavalues[0] = (Datum *)resultMCV[0];
-		stats->numvalues[0] = num_mcv;
-		stats->stanumbers[0] = (float4 *)resultMCV[1];
-		stats->numnumbers[0] = num_mcv;
+		stats->stakind[slot_idx] = STATISTIC_KIND_MCV;
+		stats->staop[slot_idx] = mystats->eqopr;
+		stats->stavalues[slot_idx] = (Datum *)resultMCV[0];
+		stats->numvalues[slot_idx] = num_mcv;
+		stats->stanumbers[slot_idx] = (float4 *)resultMCV[1];
+		stats->numnumbers[slot_idx] = num_mcv;
+		slot_idx++;
 	}
 
 	// Histogram calculation
@@ -3750,10 +3744,11 @@ merge_leaf_stats(VacAttrStatsP stats,
 	MemoryContextSwitchTo(old_context);
 	if (num_hist > 0)
 	{
-		stats->stakind[1] = STATISTIC_KIND_HISTOGRAM;
-		stats->staop[1] = mystats->ltopr;
-		stats->stavalues[1] = (Datum *) resultHistogram[0];
-		stats->numvalues[1] = num_hist;
+		stats->stakind[slot_idx] = STATISTIC_KIND_HISTOGRAM;
+		stats->staop[slot_idx] = mystats->ltopr;
+		stats->stavalues[slot_idx] = (Datum *) resultHistogram[0];
+		stats->numvalues[slot_idx] = num_hist;
+		slot_idx++;
 	}
 
 	for (i = 0; i < numPartitions; i++)
