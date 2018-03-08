@@ -87,8 +87,8 @@ typedef struct PartDatum
 	Datum datum;
 } PartDatum;
 
-static Datum* buildMCVArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, Oid typoid);
-static float4* buildFreqArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 reltuples);
+static Datum* buildMCVArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 aveTuples, Oid typoid);
+static float4* buildFreqArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 aveTuples, float4 reltuples);
 static int datumHashTableMatch(const void*keyPtr1, const void *keyPtr2, Size keysize);
 static uint32 datumHashTableHash(const void *keyPtr, Size keysize);
 static void calculateHashWithHashAny(void *clientData, void *buf, size_t len);
@@ -236,6 +236,7 @@ aggregate_leaf_partition_MCVs
 	HeapTuple *heaptupleStats,
 	float4 *relTuples,
 	unsigned int nEntries,
+	double ndistinct,
 	void **result
 	)
 {
@@ -283,10 +284,11 @@ aggregate_leaf_partition_MCVs
 	qsort(mcvpairArray, i, sizeof(MCVFreqPair *), mcvpair_cmp);
 
 	/* prepare returning MCV and Freq arrays */
-	*result = (void *)buildMCVArrayForStatsEntry(mcvpairArray, Min(i, nEntries), typoid);
-	Assert(*result);
+	*result = (void *)buildMCVArrayForStatsEntry(mcvpairArray, Min(i, nEntries), sumReltuples/ndistinct, typoid);
+	if(*result == NULL)
+		return 0;
 	result++; /* now switch to frequency array (result[1]) */
-	*result = (void *)buildFreqArrayForStatsEntry(mcvpairArray, Min(i, nEntries), sumReltuples);
+	*result = (void *)buildFreqArrayForStatsEntry(mcvpairArray, Min(i, nEntries), sumReltuples/ndistinct, sumReltuples);
 
 	hash_destroy(datumHash);
 	pfree(typInfo);
@@ -307,6 +309,7 @@ buildMCVArrayForStatsEntry
 	(
 	MCVFreqPair** mcvpairArray,
 	int nEntries,
+	float4 aveTuples,
 	Oid typoid
 	)
 {
@@ -317,6 +320,18 @@ buildMCVArrayForStatsEntry
 
 	for (int i = 0; i < nEntries; i++)
 	{
+		if((mcvpairArray[i])->count < aveTuples*1.25)
+		{
+			if(i==0)
+			{
+				pfree(out);
+				return NULL;
+			}
+			else
+			{
+				break;
+			}
+		}
 		Datum mcv = (mcvpairArray[i])->mcv;
 		out[i] = mcv;
 	}
@@ -336,6 +351,7 @@ buildFreqArrayForStatsEntry
 	(
 	MCVFreqPair** mcvpairArray,
 	int nEntries,
+	float4 aveTuples,
 	float4 reltuples
 	)
 {
@@ -346,6 +362,8 @@ buildFreqArrayForStatsEntry
 	float4 *out = (float *)palloc(sizeof(float4)*nEntries);
 	for (int i = 0; i < nEntries; i++)
 	{
+		if((mcvpairArray[i])->count < aveTuples*1.25)
+			break;
 		float4 freq = mcvpairArray[i]->count / reltuples;
 		out[i] = freq;
 	}
