@@ -1122,7 +1122,6 @@ table_analyzed_and_not_changed(Relation onerel)
 	float4		relPages;
 
 	Oid relid = RelationGetRelid(onerel);
-	HeapTuple	pkStatsTuple;
 	HLLCounter  hllcounter;
 
 	if (rel_part_status(relid) != PART_STATUS_LEAF)
@@ -1156,7 +1155,7 @@ table_analyzed_and_not_changed(Relation onerel)
 
 		float4 relTuplesSaved = hllcounter->relTuples;
 		free_attstatsslot(&hllSlot);
-		if (fabs(relTuples - relTuplesSaved) < (float)gp_autostats_on_change_threshold)
+		if (fabs(relTuples - relTuplesSaved) <= (float)gp_autostats_on_change_threshold)
 			return true;
 		else
 			return false;
