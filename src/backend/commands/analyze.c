@@ -275,6 +275,7 @@ analyze_rel_internal(Oid relid, VacuumStmt *vacstmt,
 
 	if (table_analyzed_and_not_changed(onerel))
 	{
+		elog(LOG,"Relation %d is already analyzed", RelationGetRelid(onerel));
 		relation_close(onerel, ShareUpdateExclusiveLock);
 		return;
 	}
@@ -573,6 +574,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 												&totalrows, &totaldeadrows);
 	else
 #endif
+		elog (LOG,"Needs sample for %d " , RelationGetRelid(onerel));
 		numrows = acquire_sample_rows_by_query(onerel, attr_cnt, vacattrstats, &rows, targrows,
 											   &totalrows, &totaldeadrows, &totalpages,
 											   (vacstmt->options & VACOPT_ROOTONLY) != 0,
@@ -2547,6 +2549,9 @@ compute_minimal_stats(VacAttrStatsP stats,
 	bool		is_varwidth = (!stats->attr->attbyval &&
 							   stats->attr->attlen < 0);
 	FmgrInfo	f_cmpeq;
+
+	elog(LOG, "Computing Minimal Stats column %d", stats->attr->attnum);
+
 	typedef struct
 	{
 		Datum		value;
@@ -2867,6 +2872,8 @@ compute_very_minimal_stats(VacAttrStatsP stats,
 	bool		is_varwidth = (!stats->attr->attbyval &&
 							   stats->attr->attlen < 0);
 
+	elog(LOG, "Computing Very Minimal Stats for  column %d", stats->attr->attnum);
+
 	for (i = 0; i < samplerows; i++)
 	{
 		Datum		value;
@@ -2979,6 +2986,8 @@ compute_scalar_stats(VacAttrStatsP stats,
 	fmgr_info(cmpFn, &f_cmpfn);
 
 	stats->stahll = hyperloglog_init_default();
+
+	elog(LOG, "Computing Scalar Stats  column %d", stats->attr->attnum);
 
 	/* Initial scan to find sortable values */
 	for (i = 0; i < samplerows; i++)
@@ -3496,7 +3505,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	PartitionNode *pn = get_parts(stats->attr->attrelid, 0 /*level*/ ,
 								  0 /*parent*/, false /* inctemplate */, true /*includesubparts*/);
 	Assert(pn);
-
+	elog(LOG,"Merging leaf stats");
 	List *oid_list = all_leaf_partition_relids(pn); /* all leaves */
 	StdAnalyzeData *mystats = (StdAnalyzeData *)stats->extra_data;
 	int numPartitions = list_length(oid_list);
