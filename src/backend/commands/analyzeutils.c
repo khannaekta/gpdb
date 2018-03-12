@@ -87,8 +87,8 @@ typedef struct PartDatum
 	Datum datum;
 } PartDatum;
 
-static Datum* buildMCVArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 aveTuples, Oid typoid);
-static float4* buildFreqArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 aveTuples, float4 reltuples);
+static Datum* buildMCVArrayForStatsEntry(MCVFreqPair** mcvpairArray, int *nEntries, float4 ndistinct, float4 samplerows);
+static float4* buildFreqArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 reltuples);
 static int datumHashTableMatch(const void*keyPtr1, const void *keyPtr2, Size keysize);
 static uint32 datumHashTableHash(const void *keyPtr, Size keysize);
 static void calculateHashWithHashAny(void *clientData, void *buf, size_t len);
@@ -284,17 +284,18 @@ aggregate_leaf_partition_MCVs
 	qsort(mcvpairArray, i, sizeof(MCVFreqPair *), mcvpair_cmp);
 
 	/* prepare returning MCV and Freq arrays */
-	*result = (void *)buildMCVArrayForStatsEntry(mcvpairArray, Min(i, nEntries), sumReltuples/ndistinct, typoid);
+	int nFinalEntries = Min(i, nEntries);
+	*result = (void *)buildMCVArrayForStatsEntry(mcvpairArray, &nFinalEntries, ndistinct, sumReltuples);
 	if(*result == NULL)
 		return 0;
 	result++; /* now switch to frequency array (result[1]) */
-	*result = (void *)buildFreqArrayForStatsEntry(mcvpairArray, Min(i, nEntries), sumReltuples/ndistinct, sumReltuples);
+	*result = (void *)buildFreqArrayForStatsEntry(mcvpairArray, nFinalEntries, sumReltuples);
 
 	hash_destroy(datumHash);
 	pfree(typInfo);
 	pfree(mcvpairArray);
 
-	return Min(i, nEntries);
+	return nFinalEntries;
 }
 
 /*
@@ -308,27 +309,51 @@ static Datum *
 buildMCVArrayForStatsEntry
 	(
 	MCVFreqPair** mcvpairArray,
-	int nEntries,
-	float4 aveTuples,
-	Oid typoid
+	int *nEntries,
+	float4 ndistinct,
+	float4 samplerows
 	)
 {
 	Assert(mcvpairArray);
-	Assert(nEntries > 0);
+	Assert(*nEntries > 0);
 
-	Datum *out = palloc(sizeof(Datum)*nEntries);
+	Datum *out = palloc(sizeof(Datum)*(*nEntries));
+	double mincount = -1.0;
 
-	for (int i = 0; i < nEntries; i++)
+	if (*nEntries == (int)ndistinct &&
+		ndistinct > 0 &&
+		*nEntries <= default_statistics_target)
 	{
-		if((mcvpairArray[i])->count < aveTuples*1.25)
+		/* Track list includes all values seen, and all will fit */
+	}
+	else
+	{
+		double		avgcount,
+				maxmincount;
+
+		/* estimate # of occurrences in sample of a typical value */
+		avgcount = (double) samplerows / ndistinct;
+		/* set minimum threshold count to store a value */
+		mincount = avgcount * 1.25;
+		if (mincount < 2)
+			mincount = 2;
+		/* don't let threshold exceed 1/K, however */
+		maxmincount = (double) samplerows / (double) default_statistics_target;
+		if (mincount > maxmincount)
+			mincount = maxmincount;
+
+	}
+	for (int i = 0; i < *nEntries; i++)
+	{
+		if ((mcvpairArray[i])->count < mincount)
 		{
-			if(i==0)
+			if (i == 0)
 			{
 				pfree(out);
 				return NULL;
-			}
-			else
+			} else
 			{
+				*nEntries = i;
 				break;
 			}
 		}
@@ -351,7 +376,6 @@ buildFreqArrayForStatsEntry
 	(
 	MCVFreqPair** mcvpairArray,
 	int nEntries,
-	float4 aveTuples,
 	float4 reltuples
 	)
 {
@@ -362,8 +386,6 @@ buildFreqArrayForStatsEntry
 	float4 *out = (float *)palloc(sizeof(float4)*nEntries);
 	for (int i = 0; i < nEntries; i++)
 	{
-		if((mcvpairArray[i])->count < aveTuples*1.25)
-			break;
 		float4 freq = mcvpairArray[i]->count / reltuples;
 		out[i] = freq;
 	}
