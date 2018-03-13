@@ -126,6 +126,9 @@ typedef struct HLLData {
 	/* Number of tuples in the partition */
 	float4 relTuples;
 
+	/* Number of pages in the partition */
+	float4 relPages;
+
     /* largest observed 'rho' for each of the 'm' buckets (uses the very same 
      * trick  as in the varlena type in include/c.h where additional memory 
      * is palloc'ed and treated as part of the data array ) */
