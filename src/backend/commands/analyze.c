@@ -575,6 +575,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	else
 #endif
 		elog (LOG,"Needs sample for %d " , RelationGetRelid(onerel));
+		rows = NULL;
 		numrows = acquire_sample_rows_by_query(onerel, attr_cnt, vacattrstats, &rows, targrows,
 											   &totalrows, &totaldeadrows, &totalpages,
 											   (vacstmt->options & VACOPT_ROOTONLY) != 0,
