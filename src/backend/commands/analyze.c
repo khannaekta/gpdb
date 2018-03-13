@@ -659,6 +659,24 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 										 std_fetch_func,
 										 validRowsLength, // numbers of rows in sample excluding toowide if any.
 										 totalrows);
+				if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
+				{
+					MemoryContext old_context;
+					Datum *hll_values;
+					stats->stahll->relPages = totalpages;
+					stats->stahll->relTuples = totalrows;
+
+					old_context = MemoryContextSwitchTo(stats->anl_context);
+					hll_values = (Datum *) palloc(sizeof(Datum));
+
+					int hll_length = hyperloglog_length(stats->stahll);
+					hll_values[0] = datumCopy(PointerGetDatum(stats->stahll), false, hll_length);
+					MemoryContextSwitchTo(old_context);
+					stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_HLL;
+					stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
+					stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
+					stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
+				}
 			}
 			else
 			{
@@ -3167,7 +3185,6 @@ compute_scalar_stats(VacAttrStatsP stats,
 		stats->stahll->nmultiples = nmultiple;
 		stats->stahll->ndistinct = ndistinct;
 		stats->stahll->samplerows = samplerows;
-		stats->stahll->relTuples = (float4)totalrows;
 
 		if (nmultiple == 0)
 		{
@@ -3426,22 +3443,6 @@ compute_scalar_stats(VacAttrStatsP stats,
 			slot_idx++;
 		}
 
-		if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
-		{
-			MemoryContext old_context;
-			Datum *hll_values;
-
-			old_context = MemoryContextSwitchTo(stats->anl_context);
-			hll_values = (Datum *) palloc(sizeof(Datum));
-
-			int hll_length = hyperloglog_length(stats->stahll);
-			hll_values[0] = datumCopy(PointerGetDatum(stats->stahll), false, hll_length);
-			MemoryContextSwitchTo(old_context);
-			stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_HLL;
-			stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
-			stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
-			stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
-		}
 
 		/* Generate a correlation entry if there are multiple values */
 		/*
