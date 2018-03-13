@@ -1141,7 +1141,7 @@ bool
 table_analyzed_and_not_changed(Relation onerel)
 {
 	float4		relTuples = 0;
-	float4		relPages;
+	float4		relPages = 0;
 
 	Oid relid = RelationGetRelid(onerel);
 	HLLCounter  hllcounter;
@@ -1151,7 +1151,7 @@ table_analyzed_and_not_changed(Relation onerel)
 
 	getLeafReltuplesRelpages(relid, &relTuples, &relPages);
 
-	if (relTuples == 0)
+	if (relTuples == 0 || relPages == 0)
 		return false;
 
 	int nAttr = RelationGetNumberOfAttributes(onerel);
@@ -1176,8 +1176,14 @@ table_analyzed_and_not_changed(Relation onerel)
 			continue;
 
 		float4 relTuplesSaved = hllcounter->relTuples;
+		float4 relPagesSaved = hllcounter->relPages;
 		free_attstatsslot(&hllSlot);
-		if (fabs(relTuples - relTuplesSaved) <= (float)gp_autostats_on_change_threshold)
+		// Unlike ProcessQuery, DoCopyInternal, and friends, we don't have the
+		// luxury of knowing "how many tuples have I just processed", so we use
+		// the heuristic of "does this table look similar to when I last saw it?"
+		float4 estTupPerPage = relTuples / relPages;
+		if (fabs(relTuples - relTuplesSaved) <= (float) gp_autostats_on_change_threshold &&
+			fabs(relPages - relPagesSaved) <= (float) gp_autostats_on_change_threshold / estTupPerPage)
 			return true;
 		else
 			return false;
