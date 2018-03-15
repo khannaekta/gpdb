@@ -273,13 +273,6 @@ analyze_rel_internal(Oid relid, VacuumStmt *vacstmt,
 		return;
 	}
 
-	if (table_analyzed_and_not_changed(onerel))
-	{
-		elog(LOG,"Relation %d is already analyzed", RelationGetRelid(onerel));
-		relation_close(onerel, ShareUpdateExclusiveLock);
-		return;
-	}
-
 	/*
 	 * OK, let's do it.  First let other backends know I'm in ANALYZE.
 	 */
