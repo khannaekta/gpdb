@@ -111,13 +111,12 @@ static int DatumHeapComparator(void *lhs, void *rhs, void *context);
 static void advanceCursor(int pid, int *cursors, AttStatsSlot **histSlots);
 static Datum getMinBound(AttStatsSlot **histSlots, int *cursors, int nParts, Oid ltFuncOid);
 static Datum getMaxBound(AttStatsSlot **histSlots, int nParts, Oid ltFuncOid);
-static void getHistogramHeapTuple(AttStatsSlot **histSlots,
-		HeapTuple *heaptupleStats,
-		float4 *partsReltuples,
-		float4 *sumReltuples,
-		int *numNotNullParts,
-		int nParts);
+static void
+getHistogramHeapTuple(AttStatsSlot **histSlots, HeapTuple *heaptupleStats, int *numNotNullParts, int nParts);
 static void initDatumHeap(CdbHeap *hp, AttStatsSlot **histSlots, int *cursors, int nParts);
+
+float4 getBucketSizes(const HeapTuple *heaptupleStats, const float4 *relTuples, int nParts,
+					  float4 *eachBucket);
 
 /* A few variables that don't seem worth passing around as parameters */
 static int	elevel = -1;
@@ -762,21 +761,13 @@ buildHistogramEntryForStats
  * 	sumReltuples - sum of number of tuples in all partitions
  */
 static void
-getHistogramHeapTuple
-	(
-	AttStatsSlot **histSlots,
-	HeapTuple *heaptupleStats,
-	float4 *partsReltuples,
-	float4 *sumReltuples,
-	int *numNotNullParts,
-	int nParts
-	)
+getHistogramHeapTuple(AttStatsSlot **histSlots, HeapTuple *heaptupleStats,
+					  int *numNotNullParts, int nParts)
 {
 	int pid = 0;
 
 	for (int i = 0; i < nParts; i++)
 	{
-		*sumReltuples += partsReltuples[i];
 		if (!HeapTupleIsValid(heaptupleStats[i]))
 		{
 			continue;
@@ -917,7 +908,9 @@ aggregate_leaf_partition_histograms
 
 	int numNotNullParts = 0;
 	/* populate histData, nBounds, partsReltuples and sumReltuples */
-	getHistogramHeapTuple(histSlots, heaptupleStats, relTuples, &sumReltuples, &numNotNullParts, nParts);
+	float4 *eachBucket = palloc0(nParts * sizeof(float4)); /* the number of data points in each bucket for each histogram */
+	getHistogramHeapTuple(histSlots, heaptupleStats, &numNotNullParts, nParts);
+	sumReltuples = getBucketSizes(heaptupleStats, relTuples, nParts, eachBucket);
 
 	if (0 == numNotNullParts)
 	{
@@ -930,24 +923,19 @@ aggregate_leaf_partition_histograms
 	nParts = numNotNullParts;
 
 	/* now define the state variables needed for the aggregation loop */
-	float4 bucketSize = sumReltuples / (nEntries + 1); /* target bucket size in the aggregated histogram */
+	float4 bucketSize = sumReltuples / nEntries; /* target bucket size in the aggregated histogram */
 	float4 nTuplesToFill = bucketSize; /* remaining number of tuples to fill in the current bucket
 									 of the aggregated histogram, reset to bucketSize when a new
 									 bucket is added */
-	int cursors[nParts]; /* the index of current bucket for each histogram, set to -1
+	int *cursors = palloc0(nParts * sizeof(int)); /* the index of current bucket for each histogram, set to -1
 								  after the histogram has been traversed */
-	float4 eachBucket[nParts]; /* the number of data points in each bucket for each histogram */
-	float4 remainingSize[nParts]; /* remaining number of tuples in the current bucket of a part */
-	memset(cursors, 0, nParts * sizeof(int));
-	memset(eachBucket, 0, nParts * sizeof(float4));
-	memset(remainingSize, 0, nParts * sizeof(float4));
+	float4 *remainingSize = palloc0(nParts * sizeof(float4)); /* remaining number of tuples in the current bucket of a part */
 
 	/* initialize eachBucket[] and remainingSize[] */
 	for (int i = 0; i < nParts; i++)
 	{
 		if (1 < histSlots[i]->nvalues)
 		{
-			eachBucket[i] = relTuples[i] / (histSlots[i]->nvalues - 1);
 			remainingSize[i] = eachBucket[i];
 		}
 	}
@@ -1008,6 +996,53 @@ aggregate_leaf_partition_histograms
 	*result = out;
 
 	return num_hist;
+}
+
+float4 getBucketSizes(const HeapTuple *heaptupleStats, const float4 *relTuples, int nParts,
+					  float4 *eachBucket)
+{
+	float4 *total = palloc(nParts * sizeof(float4));
+	float4 sumTotal = 0;
+	int pid = 0;
+	Assert(total != NULL);
+	for (int i = 0; i < nParts; ++i)
+	{
+		AttStatsSlot mcvSlot;
+		total[i] = relTuples[i];
+		if (heaptupleStats[i] == NULL)
+			continue;
+
+		Form_pg_statistic stat = (Form_pg_statistic) GETSTRUCT(heaptupleStats[i]);
+		if (get_attstatsslot(&mcvSlot, heaptupleStats[i], STATISTIC_KIND_MCV,
+							 InvalidOid,
+							 ATTSTATSSLOT_VALUES | ATTSTATSSLOT_NUMBERS))
+		{
+			Assert(mcvSlot.nvalues == mcvSlot.nnumbers);
+
+			for (int j = 0; j < mcvSlot.nnumbers; ++j)
+			{
+				total[i] -= relTuples[i] * mcvSlot.numbers[j];
+			}
+		}
+		total[i] -= relTuples[i] * stat->stanullfrac;
+		if (total[i] < 0.0) /* will this happen? */
+		{
+			total[i] = 0.0;
+		}
+
+		// We assume eachBucket[i] is initialized to 0.0
+		if (get_attstatsslot(&mcvSlot, heaptupleStats[i],
+							 STATISTIC_KIND_HISTOGRAM, InvalidOid,
+							 ATTSTATSSLOT_VALUES))
+		{
+			eachBucket[pid] = total[i] / (mcvSlot.nvalues - 1);
+			pid++;
+		}
+
+		sumTotal += total[i];
+	}
+	pfree(total);
+	return sumTotal;
 }
 
 /*
