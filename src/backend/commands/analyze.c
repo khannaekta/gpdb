@@ -2474,16 +2474,15 @@ std_typanalyze(VacAttrStats *stats)
 	/*
 	 * Determine which standard statistics algorithm to use
 	 */
-	if (OidIsValid(ltopr) && OidIsValid(eqopr) && rel_part_status(attr->attrelid) == PART_STATUS_ROOT)
+	if (rel_part_status(attr->attrelid) == PART_STATUS_ROOT && leaf_parts_analyzed(stats))
 	{
-		/* Seems to be a scalar datatype and root partition*/
-		if(leaf_parts_analyzed(stats))
-		{
-			stats->merge_stats = true;
-			stats->compute_stats = merge_leaf_stats;
-		}
-		else
-			stats->compute_stats = compute_scalar_stats;
+		stats->merge_stats = true;
+		stats->compute_stats = merge_leaf_stats;
+		stats->minrows = 300 * attr->attstattarget;
+	}
+	else if (OidIsValid(ltopr) && OidIsValid(eqopr))
+	{
+		stats->compute_stats = compute_scalar_stats;
 		/* Might as well use the same minrows as below */
 		stats->minrows = 300 * attr->attstattarget;
 	}
@@ -3520,6 +3519,13 @@ merge_leaf_stats(VacAttrStatsP stats,
 	bool allDistinct = false;
 	int slot_idx = 0;
 	samplerows = 0;
+	Oid			ltopr;
+	Oid			eqopr;
+
+	/* Look for default "<" and "=" operators for column's type */
+	get_sort_group_operators(stats->attr->atttypid,
+							 false, false, false,
+							 &ltopr, &eqopr, NULL);
 
 	foreach(lc, oid_list)
 	{
@@ -3627,7 +3633,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	pfree(nMultiples);
 	pfree(nUniques);
 
-	if (allDistinct)
+	if (allDistinct || (!OidIsValid(eqopr) && !OidIsValid(ltopr)))
 	{
 		/* If we found no repeated values, assume it's a unique column */
 		ndistinct = -1.0;
@@ -3685,7 +3691,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	stats->stanullfrac = (float4)nullCount / (float4)totalTuples;
 
 	// MCV calculations
-	if(ndistinct > -1)
+	if(ndistinct > -1 && OidIsValid(eqopr))
 	{
 		if (ndistinct < 0)
 			ndistinct = -ndistinct * totalTuples;
@@ -3713,26 +3719,29 @@ merge_leaf_stats(VacAttrStatsP stats,
 			slot_idx++;
 		}
 	}
+
 	// Histogram calculation
-	old_context = MemoryContextSwitchTo(stats->anl_context);
-
-	void *resultHistogram[1];
-	int num_hist = aggregate_leaf_partition_histograms(stats->attr->attrelid,
-													   stats->attr->attnum,
-													   heaptupleStats,
-													   relTuples,
-													   default_statistics_target,
-													   resultHistogram);
-	MemoryContextSwitchTo(old_context);
-	if (num_hist > 0)
+	if( OidIsValid(eqopr) && OidIsValid(ltopr))
 	{
-		stats->stakind[slot_idx] = STATISTIC_KIND_HISTOGRAM;
-		stats->staop[slot_idx] = mystats->ltopr;
-		stats->stavalues[slot_idx] = (Datum *) resultHistogram[0];
-		stats->numvalues[slot_idx] = num_hist;
-		slot_idx++;
-	}
+		old_context = MemoryContextSwitchTo(stats->anl_context);
 
+		void *resultHistogram[1];
+		int num_hist = aggregate_leaf_partition_histograms(stats->attr->attrelid,
+														   stats->attr->attnum,
+														   heaptupleStats,
+														   relTuples,
+														   default_statistics_target,
+														   resultHistogram);
+		MemoryContextSwitchTo(old_context);
+		if (num_hist > 0)
+		{
+			stats->stakind[slot_idx] = STATISTIC_KIND_HISTOGRAM;
+			stats->staop[slot_idx] = mystats->ltopr;
+			stats->stavalues[slot_idx] = (Datum *) resultHistogram[0];
+			stats->numvalues[slot_idx] = num_hist;
+			slot_idx++;
+		}
+	}
 	for (i = 0; i < numPartitions; i++)
 	{
 		if(HeapTupleIsValid(heaptupleStats[i]))
