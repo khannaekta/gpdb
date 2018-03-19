@@ -3691,6 +3691,8 @@ merge_leaf_stats(VacAttrStatsP stats,
 	stats->stanullfrac = (float4)nullCount / (float4)totalTuples;
 
 	// MCV calculations
+	MCVFreqPair **mcvpairArray = NULL;
+	int rem_mcv = 0;
 	if(ndistinct > -1 && OidIsValid(eqopr))
 	{
 		if (ndistinct < 0)
@@ -3699,13 +3701,17 @@ merge_leaf_stats(VacAttrStatsP stats,
 		old_context = MemoryContextSwitchTo(stats->anl_context);
 
 		void *resultMCV[2];
-		int num_mcv = aggregate_leaf_partition_MCVs(stats->attr->attrelid,
-													stats->attr->attnum,
-													heaptupleStats,
-													relTuples,
-													default_statistics_target,
-													ndistinct,
-													resultMCV);
+		int num_mcv = 0;
+
+		mcvpairArray = aggregate_leaf_partition_MCVs(stats->attr->attrelid,
+													 stats->attr->attnum,
+													 heaptupleStats,
+													 relTuples,
+													 default_statistics_target,
+													 ndistinct,
+													 &num_mcv,
+													 &rem_mcv,
+													 resultMCV);
 		MemoryContextSwitchTo(old_context);
 
 		if (num_mcv > 0)
@@ -3721,7 +3727,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	}
 
 	// Histogram calculation
-	if( OidIsValid(eqopr) && OidIsValid(ltopr))
+	if (OidIsValid(eqopr) && OidIsValid(ltopr))
 	{
 		old_context = MemoryContextSwitchTo(stats->anl_context);
 
@@ -3731,6 +3737,8 @@ merge_leaf_stats(VacAttrStatsP stats,
 														   heaptupleStats,
 														   relTuples,
 														   default_statistics_target,
+														   mcvpairArray,
+														   rem_mcv,
 														   resultHistogram);
 		MemoryContextSwitchTo(old_context);
 		if (num_hist > 0)
