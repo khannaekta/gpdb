@@ -59,23 +59,6 @@
 
 #include "commands/analyzeutils.h"
 
-typedef struct TypInfo
-{
-	Oid typOid;
-	bool typbyval;
-	int16 typlen;
-	Oid ltFuncOp; /* oid of 'less than' operator function id of this type */
-	Oid eqFuncOp; /* oid of equality operator function id of this type */
-} TypInfo;
-
-/* Functions and structures used for aggregating leaf partition stats */
-typedef struct MCVFreqPair
-{
-	Datum mcv;
-	float4 count;
-	TypInfo *typinfo; /* type information of datum type */
-} MCVFreqPair;
-
 typedef struct MCVFreqEntry
 {
 	MCVFreqPair *entry;
@@ -116,6 +99,7 @@ getHistogramHeapTuple(AttStatsSlot **histSlots, HeapTuple *heaptupleStats, int *
 static void initDatumHeap(CdbHeap *hp, AttStatsSlot **histSlots, int *cursors, int nParts);
 
 float4 getBucketSizes(const HeapTuple *heaptupleStats, const float4 *relTuples, int nParts,
+					  MCVFreqPair **mcvPairRemaining, int rem_mcv,
 					  float4 *eachBucket);
 
 /* A few variables that don't seem worth passing around as parameters */
@@ -226,7 +210,7 @@ addAllMCVsToHashTable
  * Output:
  * 	- result: two dimensional arrays of MCVs and Freqs
  */
-int
+MCVFreqPair **
 aggregate_leaf_partition_MCVs
 	(
 	Oid relationOid,
@@ -235,43 +219,49 @@ aggregate_leaf_partition_MCVs
 	float4 *relTuples,
 	unsigned int nEntries,
 	double ndistinct,
+	int *num_mcv,
+	int *rem_mcv,
 	void **result
 	)
 {
-	List *lRelOids = rel_get_leaf_children_relids(relationOid); /* list of OIDs of leaf partitions */
+	List *lRelOids = rel_get_leaf_children_relids(
+		relationOid); /* list of OIDs of leaf partitions */
 	Oid typoid = get_atttype(relationOid, attnum);
-	TypInfo *typInfo = (TypInfo*) palloc(sizeof(TypInfo));
+	TypInfo *typInfo = (TypInfo *) palloc(sizeof(TypInfo));
 	initTypInfo(typInfo, typoid);
 
-	HTAB* datumHash = createDatumHashTable(nEntries);
+	HTAB *datumHash = createDatumHashTable(nEntries);
 	float4 sumReltuples = 0;
 
 	int numPartitions = list_length(lRelOids);
-	for (int i=0; i < numPartitions; i++)
+	for (int i = 0; i < numPartitions; i++)
 	{
 		if (!HeapTupleIsValid(heaptupleStats[i]))
 		{
 			continue;
 		}
 
-		addAllMCVsToHashTable(datumHash, heaptupleStats[i], relTuples[i],typInfo);
+		addAllMCVsToHashTable(datumHash, heaptupleStats[i], relTuples[i],
+							  typInfo);
 		sumReltuples += relTuples[i];
 	}
 
-	if (0 == hash_get_num_entries(datumHash))
+	*rem_mcv = hash_get_num_entries(datumHash);
+	if (0 == *rem_mcv)
 	{
 		/* in the unlikely event of an emtpy hash table, return early */
 		*result = NULL;
 		result++;
 		*result = NULL;
 		hash_destroy(datumHash);
-		return 0;
+		return NULL;
 	}
 
 	int i = 0;
 	HASH_SEQ_STATUS hash_seq;
 	MCVFreqEntry *mcvfreq;
-	MCVFreqPair **mcvpairArray = palloc(hash_get_num_entries(datumHash) * sizeof(MCVFreqPair*));
+
+	MCVFreqPair **mcvpairArray = palloc((*rem_mcv) * sizeof(MCVFreqPair *));
 
 	/* put MCVFreqPairs in an array in order to sort */
 	hash_seq_init(&hash_seq, datumHash);
@@ -282,18 +272,28 @@ aggregate_leaf_partition_MCVs
 	qsort(mcvpairArray, i, sizeof(MCVFreqPair *), mcvpair_cmp);
 
 	/* prepare returning MCV and Freq arrays */
-	int nFinalEntries = Min(i, nEntries);
-	*result = (void *)buildMCVArrayForStatsEntry(mcvpairArray, &nFinalEntries, ndistinct, sumReltuples);
-	if(*result == NULL)
-		return 0;
+	*num_mcv = Min(i, nEntries);
+	*result = (void *) buildMCVArrayForStatsEntry(mcvpairArray, num_mcv,
+												  ndistinct, sumReltuples);
+	if (*result == NULL)
+	{
+		*num_mcv = 0;
+		return mcvpairArray;
+	}
+
 	result++; /* now switch to frequency array (result[1]) */
-	*result = (void *)buildFreqArrayForStatsEntry(mcvpairArray, nFinalEntries, sumReltuples);
+	*result = (void *) buildFreqArrayForStatsEntry(mcvpairArray, *num_mcv,
+												   sumReltuples);
 
 	hash_destroy(datumHash);
-	pfree(typInfo);
-	pfree(mcvpairArray);
+	// pfree(typInfo);
+	// pfree(mcvpairArray);
 
-	return nFinalEntries;
+	for (i = 0; i < *num_mcv; i++)
+		mcvpairArray++;
+
+	*rem_mcv -= *num_mcv;
+	return mcvpairArray;
 }
 
 /*
@@ -782,6 +782,33 @@ getHistogramHeapTuple(AttStatsSlot **histSlots, HeapTuple *heaptupleStats,
 	}
 	*numNotNullParts = pid;
 }
+
+/*
+ * Obtain all histogram bounds from every partition and store them in a 2D array (histData)
+ * Input:
+ * 	lRelOids - list of part Oids
+ * 	typInfo - type info
+ * 	attnum - attribute number
+ * Output:
+ * 	histData - 2D array of all histogram bounds from every partition
+ * 	nBounds - array of the number of histogram bounds (from each partition)
+ * 	partsReltuples - array of the number of tuples (from each partition)
+ * 	sumReltuples - sum of number of tuples in all partitions
+ */
+static void
+getHistogramMCVTuple(AttStatsSlot **histSlots, MCVFreqPair **mcvRemaining,
+					  int start_idx, int rem_mcv)
+{
+	for (int i = 0; i < rem_mcv; i++)
+	{
+		histSlots[start_idx+i] = (AttStatsSlot *)palloc(sizeof(AttStatsSlot));
+		histSlots[start_idx+i]->nvalues = 2;
+		histSlots[start_idx+i]->values = (Datum *)palloc(sizeof(Datum) * 2);
+		histSlots[start_idx+i]->values[0] = mcvRemaining[i]->mcv;
+		histSlots[start_idx+i]->values[1] = mcvRemaining[i]->mcv;
+	}
+}
+
 /*
  * Initialize heap by inserting the second histogram bound from each partition histogram.
  * Input:
@@ -890,9 +917,13 @@ aggregate_leaf_partition_histograms
 	HeapTuple *heaptupleStats,
 	float4 *relTuples,
 	unsigned int nEntries,
+	MCVFreqPair **mcvpairArray,
+	int rem_mcv,
 	void **result
 	)
 {
+	AssertImply(rem_mcv != 0, mcvpairArray != NULL);
+
 	List *lRelOids = rel_get_leaf_children_relids(relationOid);
 	int nParts = list_length(lRelOids);
 	Assert(nParts > 0);
@@ -902,25 +933,25 @@ aggregate_leaf_partition_histograms
 	Oid typOid = get_atttype(relationOid, attnum);
 	initTypInfo(&typInfo, typOid);
 
-	AttStatsSlot **histSlots = (AttStatsSlot **) palloc(nParts * sizeof(AttStatsSlot *));
+	AttStatsSlot **histSlots = (AttStatsSlot **) palloc((nParts + rem_mcv) * sizeof(AttStatsSlot *));
 	float4 sumReltuples = 0;
-	memset(histSlots, 0, nParts * sizeof(AttStatsSlot *));
+	memset(histSlots, 0, (nParts + rem_mcv) * sizeof(AttStatsSlot *));
 
 	int numNotNullParts = 0;
 	/* populate histData, nBounds, partsReltuples and sumReltuples */
-	float4 *eachBucket = palloc0(nParts * sizeof(float4)); /* the number of data points in each bucket for each histogram */
+	float4 *eachBucket = palloc0( (nParts + rem_mcv) * sizeof(float4)); /* the number of data points in each bucket for each histogram */
 	getHistogramHeapTuple(histSlots, heaptupleStats, &numNotNullParts, nParts);
-	sumReltuples = getBucketSizes(heaptupleStats, relTuples, nParts, eachBucket);
-
-	if (0 == numNotNullParts)
+	if (0 == numNotNullParts + rem_mcv)
 	{
 		/* if all the parts histograms are empty, we return nothing */
 		result = NULL;
 		return 0;
 	}
+	getHistogramMCVTuple(histSlots, mcvpairArray, numNotNullParts, rem_mcv);
+	sumReltuples = getBucketSizes(heaptupleStats, relTuples, nParts, mcvpairArray, rem_mcv, eachBucket);
 
 	/* reset nParts to the number of non-null parts */
-	nParts = numNotNullParts;
+	nParts = numNotNullParts+rem_mcv;
 
 	/* now define the state variables needed for the aggregation loop */
 	float4 bucketSize = sumReltuples / nEntries; /* target bucket size in the aggregated histogram */
@@ -999,6 +1030,7 @@ aggregate_leaf_partition_histograms
 }
 
 float4 getBucketSizes(const HeapTuple *heaptupleStats, const float4 *relTuples, int nParts,
+					  MCVFreqPair **mcvPairRemaining, int rem_mcv,
 					  float4 *eachBucket)
 {
 	float4 *total = palloc(nParts * sizeof(float4));
@@ -1040,6 +1072,12 @@ float4 getBucketSizes(const HeapTuple *heaptupleStats, const float4 *relTuples, 
 		}
 
 		sumTotal += total[i];
+	}
+	
+	for (int i = pid; i < pid+rem_mcv; ++i)
+	{
+		eachBucket[i] = mcvPairRemaining[i-pid]->count;
+		sumTotal += eachBucket[i];
 	}
 	pfree(total);
 	return sumTotal;
