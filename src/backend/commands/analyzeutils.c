@@ -286,11 +286,7 @@ aggregate_leaf_partition_MCVs
 												   sumReltuples);
 
 	hash_destroy(datumHash);
-	// pfree(typInfo);
-	// pfree(mcvpairArray);
-
-	for (i = 0; i < *num_mcv; i++)
-		mcvpairArray++;
+	pfree(typInfo);
 
 	*rem_mcv -= *num_mcv;
 	return mcvpairArray;
@@ -933,9 +929,8 @@ aggregate_leaf_partition_histograms
 	Oid typOid = get_atttype(relationOid, attnum);
 	initTypInfo(&typInfo, typOid);
 
-	AttStatsSlot **histSlots = (AttStatsSlot **) palloc((nParts + rem_mcv) * sizeof(AttStatsSlot *));
+	AttStatsSlot **histSlots = (AttStatsSlot **) palloc0((nParts + rem_mcv) * sizeof(AttStatsSlot *));
 	float4 sumReltuples = 0;
-	memset(histSlots, 0, (nParts + rem_mcv) * sizeof(AttStatsSlot *));
 
 	int numNotNullParts = 0;
 	/* populate histData, nBounds, partsReltuples and sumReltuples */

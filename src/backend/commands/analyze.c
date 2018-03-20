@@ -3496,38 +3496,34 @@ merge_leaf_stats(VacAttrStatsP stats,
 				 int samplerows,
 				 double totalrows)
 {
-	PartitionNode *pn = get_parts(stats->attr->attrelid, 0 /*level*/ ,
-								  0 /*parent*/, false /* inctemplate */, true /*includesubparts*/);
+	PartitionNode *pn =
+		get_parts(stats->attr->attrelid, 0 /*level*/, 0 /*parent*/,
+				  false /* inctemplate */, true /*includesubparts*/);
 	Assert(pn);
-	elog(LOG,"Merging leaf stats");
+	elog(LOG, "Merging leaf stats");
 	List *oid_list = all_leaf_partition_relids(pn); /* all leaves */
-	StdAnalyzeData *mystats = (StdAnalyzeData *)stats->extra_data;
+	StdAnalyzeData *mystats = (StdAnalyzeData *) stats->extra_data;
 	int numPartitions = list_length(oid_list);
 
 	ListCell *lc;
-	float *relTuples = (float *) palloc(sizeof(float) * numPartitions);
-	float *nDistincts = (float *) palloc(sizeof(float) * numPartitions);
-	float *nMultiples = (float *) palloc(sizeof(float) * numPartitions);
-	float *nUniques = (float *) palloc(sizeof(float) * numPartitions);
-	memset(relTuples, 0, numPartitions * sizeof(float));
-	memset(nDistincts, 0, numPartitions * sizeof(float));
-	memset(nMultiples, 0, numPartitions * sizeof(float));
-	memset(nUniques, 0, numPartitions * sizeof(float));
+	float *relTuples = (float *) palloc0(sizeof(float) * numPartitions);
+	float *nDistincts = (float *) palloc0(sizeof(float) * numPartitions);
+	float *nMultiples = (float *) palloc0(sizeof(float) * numPartitions);
+	float *nUniques = (float *) palloc0(sizeof(float) * numPartitions);
 	int relNum = 0;
 	float totalTuples = 0;
 	float nmultiple = 0;
 	bool allDistinct = false;
 	int slot_idx = 0;
 	samplerows = 0;
-	Oid			ltopr;
-	Oid			eqopr;
+	Oid ltopr;
+	Oid eqopr;
 
 	/* Look for default "<" and "=" operators for column's type */
-	get_sort_group_operators(stats->attr->atttypid,
-							 false, false, false,
-							 &ltopr, &eqopr, NULL);
+	get_sort_group_operators(stats->attr->atttypid, false, false, false, &ltopr,
+							 &eqopr, NULL);
 
-	foreach(lc, oid_list)
+	foreach (lc, oid_list)
 	{
 		Oid pkrelid = lfirst_oid(lc);
 
@@ -3539,15 +3535,14 @@ merge_leaf_stats(VacAttrStatsP stats,
 
 	MemoryContext old_context;
 
-	HeapTuple *heaptupleStats = (HeapTuple *)palloc(numPartitions * sizeof(HeapTuple *));
+	HeapTuple *heaptupleStats =
+		(HeapTuple *) palloc(numPartitions * sizeof(HeapTuple *));
 
 	// NDV calculations
 	float4 colAvgWidth = 0;
 	float4 nullCount = 0;
-	HLLCounter *hllcounters = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
-	HLLCounter *hllcounters_copy = (HLLCounter *) palloc(numPartitions * sizeof(HLLCounter));
-	memset(hllcounters, 0, numPartitions * sizeof(HLLCounter));
-	memset(hllcounters_copy, 0, numPartitions * sizeof(HLLCounter));
+	HLLCounter *hllcounters = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
+	HLLCounter *hllcounters_copy = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
 
 	HLLCounter finalHLL = NULL;
 	int i, j;
@@ -3555,8 +3550,11 @@ merge_leaf_stats(VacAttrStatsP stats,
 	for (i = 0; i < numPartitions; i++)
 	{
 		Oid relid = list_nth_oid(oid_list, i);
-		colAvgWidth = colAvgWidth + get_attavgwidth(relid, stats->attr->attnum) * relTuples[i];
-		nullCount = nullCount + get_attnullfrac(relid, stats->attr->attnum) * relTuples[i];
+		colAvgWidth =
+			colAvgWidth +
+			get_attavgwidth(relid, stats->attr->attnum) * relTuples[i];
+		nullCount = nullCount +
+					get_attnullfrac(relid, stats->attr->attnum) * relTuples[i];
 
 		heaptupleStats[i] = get_att_stats(relid, stats->attr->attnum);
 
@@ -3567,13 +3565,14 @@ merge_leaf_stats(VacAttrStatsP stats,
 		}
 
 		AttStatsSlot hllSlot;
-		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL, InvalidOid, ATTSTATSSLOT_VALUES);
+		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL,
+						 InvalidOid, ATTSTATSSLOT_VALUES);
 
-		if(hllSlot.nvalues > 0)
+		if (hllSlot.nvalues > 0)
 		{
 			hllcounters[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
-			nDistincts[i] = (float)hllcounters[i]->ndistinct;
-			nMultiples[i] = (float)hllcounters[i]->nmultiples;
+			nDistincts[i] = (float) hllcounters[i]->ndistinct;
+			nMultiples[i] = (float) hllcounters[i]->nmultiples;
 			samplerows += hllcounters[i]->samplerows;
 			hllcounters_copy[i] = hll_copy(hllcounters[i]);
 			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
@@ -3584,7 +3583,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	if (finalHLL != NULL)
 	{
 		ndistinct = hyperloglog_get_estimate(finalHLL);
-		if ( (fabs(samplerows-ndistinct) / (float)samplerows) < 0.05)
+		if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.05)
 		{
 			allDistinct = true;
 		}
@@ -3601,13 +3600,16 @@ merge_leaf_stats(VacAttrStatsP stats,
 				{
 					if (i != j && hllcounters_copy[j] != NULL)
 					{
-						HLLCounter temp_hll_counter = hll_copy(hllcounters_copy[j]);
-						finalHLL_temp = hyperloglog_merge(finalHLL_temp, temp_hll_counter);
+						HLLCounter temp_hll_counter =
+							hll_copy(hllcounters_copy[j]);
+						finalHLL_temp =
+							hyperloglog_merge(finalHLL_temp, temp_hll_counter);
 					}
 				}
 				if (finalHLL_temp != NULL)
 				{
-					nUniques[i] = ndistinct - hyperloglog_get_estimate(finalHLL_temp);
+					nUniques[i] =
+						ndistinct - hyperloglog_get_estimate(finalHLL_temp);
 					nUnique += nUniques[i];
 					nmultiple += nMultiples[i] * (nUniques[i] / nDistincts[i]);
 				}
@@ -3638,7 +3640,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		/* If we found no repeated values, assume it's a unique column */
 		ndistinct = -1.0;
 	}
-	else if ((int)nmultiple >= (int)ndistinct)
+	else if ((int) nmultiple >= (int) ndistinct)
 	{
 		/*
 		 * Every value in the sample appeared more than once.  Assume the
@@ -3661,16 +3663,14 @@ merge_leaf_stats(VacAttrStatsP stats,
 		 * Overwidth values are assumed to have been distinct.
 		 *----------
 		 */
-		int			f1 = ndistinct - nmultiple;
-		int			d = f1 + nmultiple;
-		double		numer,
-		denom,
-		stadistinct;
+		int f1 = ndistinct - nmultiple;
+		int d = f1 + nmultiple;
+		double numer, denom, stadistinct;
 
-		numer = (double) samplerows *(double) d;
+		numer = (double) samplerows * (double) d;
 
 		denom = (double) (samplerows - f1) +
-		(double) f1 *(double) samplerows / totalrows;
+				(double) f1 * (double) samplerows / totalrows;
 
 		stadistinct = numer / denom;
 		/* Clamp to sane range in case of roundoff error */
@@ -3685,42 +3685,39 @@ merge_leaf_stats(VacAttrStatsP stats,
 		ndistinct = -(ndistinct / totalTuples);
 
 	// finalize NDV calculation
-	stats->stadistinct = ndistinct ;
+	stats->stadistinct = ndistinct;
 	stats->stats_valid = true;
 	stats->stawidth = colAvgWidth / totalTuples;
-	stats->stanullfrac = (float4)nullCount / (float4)totalTuples;
+	stats->stanullfrac = (float4) nullCount / (float4) totalTuples;
 
 	// MCV calculations
 	MCVFreqPair **mcvpairArray = NULL;
 	int rem_mcv = 0;
-	if(ndistinct > -1 && OidIsValid(eqopr))
+	int num_mcv = 0;
+	if (ndistinct > -1 && OidIsValid(eqopr))
 	{
 		if (ndistinct < 0)
+		{
 			ndistinct = -ndistinct * totalTuples;
+		}
 
 		old_context = MemoryContextSwitchTo(stats->anl_context);
 
 		void *resultMCV[2];
-		int num_mcv = 0;
 
-		mcvpairArray = aggregate_leaf_partition_MCVs(stats->attr->attrelid,
-													 stats->attr->attnum,
-													 heaptupleStats,
-													 relTuples,
-													 default_statistics_target,
-													 ndistinct,
-													 &num_mcv,
-													 &rem_mcv,
-													 resultMCV);
+		mcvpairArray = aggregate_leaf_partition_MCVs(
+			stats->attr->attrelid, stats->attr->attnum, heaptupleStats,
+			relTuples, default_statistics_target, ndistinct, &num_mcv, &rem_mcv,
+			resultMCV);
 		MemoryContextSwitchTo(old_context);
 
 		if (num_mcv > 0)
 		{
 			stats->stakind[slot_idx] = STATISTIC_KIND_MCV;
 			stats->staop[slot_idx] = mystats->eqopr;
-			stats->stavalues[slot_idx] = (Datum *)resultMCV[0];
+			stats->stavalues[slot_idx] = (Datum *) resultMCV[0];
 			stats->numvalues[slot_idx] = num_mcv;
-			stats->stanumbers[slot_idx] = (float4 *)resultMCV[1];
+			stats->stanumbers[slot_idx] = (float4 *) resultMCV[1];
 			stats->numnumbers[slot_idx] = num_mcv;
 			slot_idx++;
 		}
@@ -3732,14 +3729,10 @@ merge_leaf_stats(VacAttrStatsP stats,
 		old_context = MemoryContextSwitchTo(stats->anl_context);
 
 		void *resultHistogram[1];
-		int num_hist = aggregate_leaf_partition_histograms(stats->attr->attrelid,
-														   stats->attr->attnum,
-														   heaptupleStats,
-														   relTuples,
-														   default_statistics_target,
-														   mcvpairArray,
-														   rem_mcv,
-														   resultHistogram);
+		int num_hist = aggregate_leaf_partition_histograms(
+			stats->attr->attrelid, stats->attr->attnum, heaptupleStats,
+			relTuples, default_statistics_target, mcvpairArray + num_mcv,
+			rem_mcv, resultHistogram);
 		MemoryContextSwitchTo(old_context);
 		if (num_hist > 0)
 		{
@@ -3752,9 +3745,11 @@ merge_leaf_stats(VacAttrStatsP stats,
 	}
 	for (i = 0; i < numPartitions; i++)
 	{
-		if(HeapTupleIsValid(heaptupleStats[i]))
+		if (HeapTupleIsValid(heaptupleStats[i]))
 			heap_freetuple(heaptupleStats[i]);
 	}
+	if (num_mcv > 0)
+		pfree(mcvpairArray);
 	pfree(heaptupleStats);
 	pfree(relTuples);
 }
