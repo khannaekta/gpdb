@@ -2801,7 +2801,8 @@ typedef enum VacuumOption
 	VACOPT_VERBOSE = 1 << 2,	/* print progress info */
 	VACOPT_FREEZE = 1 << 3,		/* FREEZE option */
 	VACOPT_FULL = 1 << 4,		/* FULL (non-concurrent) vacuum */
-	VACOPT_ROOTONLY = 1 << 5	/* only ANALYZE root partition tables */
+	VACOPT_ROOTONLY = 1 << 5,	/* only ANALYZE root partition tables */
+	VACOPT_MERGE = 1 << 6,		/* merge stats */
 } VacuumOption;
 
 typedef enum AOVacuumPhase
