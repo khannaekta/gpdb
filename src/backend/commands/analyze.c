@@ -442,6 +442,17 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		attr_cnt = tcnt;
 	}
 
+	if (vacstmt->options & VACOPT_MERGE)
+	{
+		for (i = 0; i < attr_cnt; i++)
+		{
+			if (vacattrstats[i]->merge_stats == false)
+			{
+				elog(ERROR,"Cannot run ANALYZE MERGE since not all non-empty leaf partitions have available statistics for the merge");
+			}
+		}
+	}
+
 	/*
 	 * Open all indexes of the relation, and see if there are any analyzable
 	 * columns in the indexes.	We do not analyze index columns if there was
