@@ -10,14 +10,10 @@
  */
 #include "postgres.h"
 #include "access/heapam.h"
-#include "access/hash.h"
 #include "catalog/pg_statistic.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 #include "utils/datum.h"
-#include "utils/dynahash.h"
-#include "utils/hsearch.h"
-#include "cdb/cdbhash.h"
 #include "cdb/cdbheap.h"
 #include "cdb/cdbpartition.h"
 #include "parser/parse_oper.h"
@@ -72,23 +68,18 @@ typedef struct PartDatum
 
 static Datum* buildMCVArrayForStatsEntry(MCVFreqPair** mcvpairArray, int *nEntries, float4 ndistinct, float4 samplerows);
 static float4* buildFreqArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntries, float4 reltuples);
-static int datumHashTableMatch(const void*keyPtr1, const void *keyPtr2, Size keysize);
-static uint32 datumHashTableHash(const void *keyPtr, Size keysize);
-static void calculateHashWithHashAny(void *clientData, void *buf, size_t len);
-static HTAB* createDatumHashTable(unsigned int nEntries);
 static MCVFreqPair* MCVFreqPairCopy(MCVFreqPair* mfp);
-static bool containsDatum(HTAB *datumHash, MCVFreqPair *mfp);
-static void addAllMCVsToHashTable
+static List *addAllMCVsToList
 	(
-	HTAB *datumHash,
+	List *datumList,
 	HeapTuple heaptupleStats,
 	float4 partReltuples,
 	TypInfo *typInfo
 	);
-static void addMCVToHashTable(HTAB* datumHash, MCVFreqPair *mfp);
+static List *addMCVToList(List *datumList, MCVFreqPair *mfp);
 static int mcvpair_cmp(const void *a, const void *b);
 
-static void initTypInfo(TypInfo *typInfo, Oid typOid);
+static void initTypInfo(TypInfo *typInfo, Oid typOid, bool needLT);
 static int getNextPartDatum(CdbHeap *hp);
 static int DatumHeapComparator(void *lhs, void *rhs, void *context);
 static void advanceCursor(int pid, int *cursors, AttStatsSlot **histSlots);
@@ -162,19 +153,19 @@ get_rel_reltuples(Oid relid)
 }
 
 /*
- * Given column stats of an attribute, build an MCVFreqPair and add it to the hash table.
- * If the MCV to be added already exist in the hash table, we increment its count value.
+ * Given column stats of an attribute, build an MCVFreqPair and add it to the list.
+ * If the MCV to be added already exist in the list, we increment its count value.
  * Input:
- * 	- datumHash: hash table
+ * 	- datumList: list
  * 	- partOid: Oid of current partition
  * 	- typInfo: type information
  * Output:
  *  - partReltuples: the number of tuples in this partition
  */
-static void
-addAllMCVsToHashTable
+static List *
+addAllMCVsToList
 	(
-	HTAB *datumHash,
+	List *datumList,
 	HeapTuple heaptupleStats,
 	float4 partReltuples,
 	TypInfo *typInfo
@@ -192,10 +183,11 @@ addAllMCVsToHashTable
 		mfp->mcv = mcv;
 		mfp->count = count;
 		mfp->typinfo = typInfo;
-		addMCVToHashTable(datumHash, mfp);
+		datumList = addMCVToList(datumList, mfp);
 		pfree(mfp);
 	}
 	free_attstatsslot(&mcvSlot);
+	return datumList;
 }
 
 
@@ -228,9 +220,9 @@ aggregate_leaf_partition_MCVs
 		relationOid); /* list of OIDs of leaf partitions */
 	Oid typoid = get_atttype(relationOid, attnum);
 	TypInfo *typInfo = (TypInfo *) palloc(sizeof(TypInfo));
-	initTypInfo(typInfo, typoid);
+	initTypInfo(typInfo, typoid, false);
 
-	HTAB *datumHash = createDatumHashTable(nEntries);
+	List *datumList = NIL;
 	float4 sumReltuples = 0;
 
 	int numPartitions = list_length(lRelOids);
@@ -241,33 +233,29 @@ aggregate_leaf_partition_MCVs
 			continue;
 		}
 
-		addAllMCVsToHashTable(datumHash, heaptupleStats[i], relTuples[i],
-							  typInfo);
+		datumList = addAllMCVsToList(datumList, heaptupleStats[i], relTuples[i],
+									 typInfo);
 		sumReltuples += relTuples[i];
 	}
 
-	*rem_mcv = hash_get_num_entries(datumHash);
+	*rem_mcv = list_length(datumList);
 	if (0 == *rem_mcv)
 	{
-		/* in the unlikely event of an emtpy hash table, return early */
+		/* in the unlikely event of an emtpy list, return early */
 		*result = NULL;
 		result++;
 		*result = NULL;
-		hash_destroy(datumHash);
 		return NULL;
 	}
 
 	int i = 0;
-	HASH_SEQ_STATUS hash_seq;
-	MCVFreqEntry *mcvfreq;
 
 	MCVFreqPair **mcvpairArray = palloc((*rem_mcv) * sizeof(MCVFreqPair *));
 
-	/* put MCVFreqPairs in an array in order to sort */
-	hash_seq_init(&hash_seq, datumHash);
-	while ((mcvfreq = hash_seq_search(&hash_seq)) != NULL)
+	ListCell *lc;
+	foreach(lc, datumList)
 	{
-		mcvpairArray[i++] = mcvfreq->entry;
+		mcvpairArray[i++] = (MCVFreqPair *)lfirst(lc);
 	}
 	qsort(mcvpairArray, i, sizeof(MCVFreqPair *), mcvpair_cmp);
 
@@ -285,7 +273,7 @@ aggregate_leaf_partition_MCVs
 	*result = (void *) buildFreqArrayForStatsEntry(mcvpairArray, *num_mcv,
 												   sumReltuples);
 
-	hash_destroy(datumHash);
+	list_free(datumList);
 	pfree(typInfo);
 
 	*rem_mcv -= *num_mcv;
@@ -407,43 +395,36 @@ mcvpair_cmp(const void *a, const void *b)
 }
 
 /**
- * Add an MCVFreqPair to the hash table, if the same datum already exists
- * in the hash table, update its count
+ * Add an MCVFreqPair to the list, if the same datum already exists
+ * in the list, update its count
  * Input:
- * 	datumHash - hash table
+ * 	datumList - list
  * 	mfp - MCVFreqPair to be added
  * 	typbyval - whether the datum inside is passed by value
  * 	typlen - pg_type.typlen of the datum type
  */
-static void
-addMCVToHashTable(HTAB* datumHash, MCVFreqPair *mfp)
+static List *
+addMCVToList(List *datumList, MCVFreqPair *mfp)
 {
-	Assert(datumHash);
 	Assert(mfp);
 
-	MCVFreqEntry *mcvfreq;
-	bool found = false; /* required by hash_search */
-
-	if (!containsDatum(datumHash, mfp))
+	ListCell *lc;
+	foreach(lc, datumList)
 	{
-		/* create a deep copy of MCVFreqPair and put it in the hash table */
-		MCVFreqPair *key = MCVFreqPairCopy(mfp);
-		mcvfreq = hash_search(datumHash, &key, HASH_ENTER, &found);
-		if (mcvfreq == NULL)
+		MCVFreqPair *mfp_curr = (MCVFreqPair *)lfirst(lc);
+		if (datumIsEqual(mfp_curr->mcv, mfp->mcv, mfp->typinfo->typbyval, mfp->typinfo->typlen))
 		{
-			ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("out of memory")));
+			mfp_curr->count += mfp->count;
+			return datumList;
 		}
-		mcvfreq->entry = key;
 	}
 
-	else
-	{
-		mcvfreq = hash_search(datumHash, &mfp, HASH_FIND, &found);
-		Assert(mcvfreq);
-		mcvfreq->entry->count += mfp->count;
-	}
+	/* create a deep copy of MCVFreqPair and put it in the list */
+	MCVFreqPair *key = MCVFreqPairCopy(mfp);
 
-	return;
+	datumList = lappend(datumList, key);
+
+	return datumList;
 }
 
 /**
@@ -466,107 +447,6 @@ MCVFreqPairCopy(MCVFreqPair* mfp)
 	return result;
 }
 
-/**
- * Test whether an MCVFreqPair is in the hash table
- * Input:
- * 	datumHash - hash table
- * 	mfp - pointer to an MCVFreqPair
- * Output:
- * 	found - whether the MCVFreqPair is found
- */
-static bool
-containsDatum(HTAB *datumHash, MCVFreqPair *mfp)
-{
-	bool found = false;
-	if (datumHash != NULL)
-		hash_search(datumHash, &mfp, HASH_FIND, &found);
-
-	return found;
-}
-
-/**
- * Create a hash table with both hash key and hash entry as a pointer
- * to a MCVFreqPair struct
- * Input:
- * 	nEntries - estimated number of elements in the hash table, the size
- * 	of the hash table can grow dynamically
- * Output:
- * 	a pointer to the created hash table
- */
-static HTAB*
-createDatumHashTable(unsigned int nEntries)
-{
-	HASHCTL	hash_ctl;
-	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
-
-	hash_ctl.keysize = sizeof(MCVFreqPair*);
-	hash_ctl.entrysize = sizeof(MCVFreqEntry);
-	hash_ctl.hash = datumHashTableHash;
-	hash_ctl.match = datumHashTableMatch;
-
-	return hash_create("DatumHashTable", nEntries, &hash_ctl, HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
-}
-
-/**
- * A generic hash function
- * Input:
- * 	buf - pointer to hash key
- * 	len - number of bytes to be hashed
- * Output:
- * 	clientData - hash value as an unsigned integer
- */
-static void
-calculateHashWithHashAny(void *clientData, void *buf, size_t len)
-{
-	uint32 *result = (uint32*) clientData;
-	*result = hash_any((unsigned char *)buf, len );
-}
-
-/**
- * Hash function for MCVFreqPair struct pointer.
- * Input:
- * 	keyPtr - pointer to hash key
- * 	keysize - not used, hash function must have this signature
- * Output:
- * 	result - hash value as an unsigned integer
- */
-static uint32
-datumHashTableHash(const void *keyPtr, Size keysize)
-{
-	uint32 result = 0;
-	MCVFreqPair *mfp = *((MCVFreqPair **)keyPtr);
-
-	hashDatum(mfp->mcv, mfp->typinfo->typOid, calculateHashWithHashAny, &result);
-
-	return result;
-}
-
-/**
- * Match function for MCVFreqPair struct pointer.
- * Input:
- * 	keyPtr1, keyPtr2 - pointers to two hash keys
- * 	keysize - not used, hash function must have this signature
- * Output:
- * 	0 if two hash keys match, 1 otherwise
- */
-static int
-datumHashTableMatch(const void *keyPtr1, const void *keyPtr2, Size keysize)
-{
-	Assert(keyPtr1);
-	Assert(keyPtr2);
-
-	MCVFreqPair *left = *((MCVFreqPair **)keyPtr1);
-	MCVFreqPair *right = *((MCVFreqPair **)keyPtr2);
-
-	Assert(left->typinfo->typOid == right->typinfo->typOid);
-
-	return datumCompare(left->mcv, right->mcv, left->typinfo->eqFuncOp) ? 0 : 1;
-}
-
-
-
-
-
 /*
  * Initialize type information
  * Input:
@@ -575,11 +455,11 @@ datumHashTableMatch(const void *keyPtr1, const void *keyPtr2, Size keysize)
  *  members of typInfo are initialized
  */
 static void
-initTypInfo(TypInfo *typInfo, Oid typOid)
+initTypInfo(TypInfo *typInfo, Oid typOid, bool needLT)
 {
 	typInfo->typOid = typOid;
 	get_typlenbyval(typOid, &typInfo->typlen, &typInfo->typbyval);
-	get_sort_group_operators(typOid, true, true, false, &typInfo->ltFuncOp, &typInfo->eqFuncOp, NULL);
+	get_sort_group_operators(typOid, needLT, true, false, &typInfo->ltFuncOp, &typInfo->eqFuncOp, NULL);
 	typInfo->eqFuncOp = get_opcode(typInfo->eqFuncOp);
 	typInfo->ltFuncOp = get_opcode(typInfo->ltFuncOp);
 }
@@ -780,6 +660,7 @@ getHistogramHeapTuple(AttStatsSlot **histSlots, HeapTuple *heaptupleStats,
 }
 
 /*
+ * Change me
  * Obtain all histogram bounds from every partition and store them in a 2D array (histData)
  * Input:
  * 	lRelOids - list of part Oids
@@ -927,7 +808,7 @@ aggregate_leaf_partition_histograms
 	/* get type information */
 	TypInfo typInfo;
 	Oid typOid = get_atttype(relationOid, attnum);
-	initTypInfo(&typInfo, typOid);
+	initTypInfo(&typInfo, typOid, true);
 
 	AttStatsSlot **histSlots = (AttStatsSlot **) palloc0((nParts + rem_mcv) * sizeof(AttStatsSlot *));
 	float4 sumReltuples = 0;
