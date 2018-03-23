@@ -149,6 +149,7 @@ static void analyzeEstimateIndexpages(Relation onerel, Relation indrel, BlockNum
 
 static void analyze_rel_internal(Oid relid, VacuumStmt *vacstmt,
 					 BufferAccessStrategy bstrategy);
+static void acquire_hll_by_query(Relation onerel, int nattrs, VacAttrStats **attrstats);
 
 /*
  *	analyze_rel() -- analyze one relation
@@ -565,6 +566,15 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 	 * Acquire the sample rows
 	 */
 	// GPDB_90_MERGE_FIXME: Need to implement 'acuire_inherited_sample_rows_by_query'
+	if (vacstmt->options & VACOPT_FULLSCAN)
+	{
+		if(rel_part_status(RelationGetRelid(onerel)) != PART_STATUS_ROOT)
+		{
+			acquire_hll_by_query(onerel, attr_cnt, vacattrstats);
+
+			elog (LOG,"HLL FULL SCAN ");
+		}
+	}
 	if (needs_sample(vacattrstats, attr_cnt))
 	{
 		/*
@@ -577,7 +587,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 												&totalrows, &totaldeadrows);
 	else
 #endif
-		elog (LOG,"Needs sample for %d " , RelationGetRelid(onerel));
+		elog (LOG,"Needs sample for %s " , RelationGetRelationName(onerel));
 		rows = NULL;
 		numrows = acquire_sample_rows_by_query(onerel, attr_cnt, vacattrstats, &rows, targrows,
 											   &totalrows, &totaldeadrows, &totalpages,
@@ -663,6 +673,22 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 										 std_fetch_func,
 										 validRowsLength, // numbers of rows in sample excluding toowide if any.
 										 totalrows);
+				if(stats->stahll_full != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
+				{
+					MemoryContext old_context;
+					Datum *hll_values;
+
+					old_context = MemoryContextSwitchTo(stats->anl_context);
+					hll_values = (Datum *) palloc(sizeof(Datum));
+
+					int hll_length = datumGetSize(stats->stahll_full, false, -1);
+					hll_values[0] = datumCopy(PointerGetDatum(stats->stahll_full), false, hll_length);
+					MemoryContextSwitchTo(old_context);
+					stats->stakind[STATISTIC_NUM_SLOTS-2] = STATISTIC_KIND_FULLHLL;
+					stats->stavalues[STATISTIC_NUM_SLOTS-2] = hll_values;
+					stats->numvalues[STATISTIC_NUM_SLOTS-2] =  1;
+					stats->statyplen[STATISTIC_NUM_SLOTS-2] = hll_length;
+				}
 				if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
 				{
 					MemoryContext old_context;
@@ -1114,7 +1140,7 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	 * the type of the data being analyzed, but the type-specific typanalyze
 	 * function can change them if it wants to store something else.
 	 */
-	for (i = 0; i < STATISTIC_NUM_SLOTS-1; i++)
+	for (i = 0; i < STATISTIC_NUM_SLOTS-2; i++)
 	{
 		stats->statypid[i] = stats->attrtypid;
 		stats->statyplen[i] = stats->attrtype->typlen;
@@ -1123,7 +1149,7 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	}
 
 	/*
-	 * The last slot of statistics is reservered for hyperloglog counter which
+	 * The last slots of statistics is reservered for hyperloglog counter which
 	 * is saved as a bytea. Therefore the type inforation is hardcoded for the
 	 * bytea.
 	 */
@@ -1131,6 +1157,12 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	stats->statyplen[i] = -1; // variable length type
 	stats->statypbyval[i] = false; // bytea is pass by reference
 	stats->statypalign[i] = 'i'; // INT alignment (4-byte)
+
+	stats->statypid[i+1] = 17; // oid for bytea
+	stats->statyplen[i+1] = -1; // variable length type
+	stats->statypbyval[i+1] = false; // bytea is pass by reference
+	stats->statypalign[i+1] = 'i'; // INT alignment (4-byte)
+
 
 	/*
 	 * Call the type-specific typanalyze function.	If none is specified, use
@@ -1653,6 +1685,93 @@ compare_rows(const void *a, const void *b)
 	return 0;
 }
 
+static void
+acquire_hll_by_query(Relation onerel, int nattrs, VacAttrStats **attrstats)
+{
+	StringInfoData str, columnStr;
+	int			i;
+	int			ret;
+	Datum	   *vals;
+	MemoryContext oldcxt;
+	const char *schemaName = NULL;
+	const char *tableName = NULL;
+
+	schemaName = get_namespace_name(RelationGetNamespace(onerel));
+	tableName = RelationGetRelationName(onerel);
+
+	vals = (Datum *) palloc(RelationGetNumberOfAttributes(onerel) * sizeof(Datum));
+	initStringInfo(&str);
+	initStringInfo(&columnStr);
+	for (i = 0; i < nattrs; i++)
+	{
+		vals[i] = (Datum) 0;
+		const char *attname = quote_identifier(NameStr(attrstats[i]->attr->attname));
+		appendStringInfo(&columnStr, "hyperloglog_accum(%s)", attname);
+		if(i != nattrs-1)
+			appendStringInfo(&columnStr, ", ");
+	}
+
+	appendStringInfo(&str, "select %s from %s.%s as Ta ",
+					 columnStr.data,
+					 quote_identifier(schemaName),
+					 quote_identifier(RelationGetRelationName(onerel)));
+
+	oldcxt = CurrentMemoryContext;
+
+	if (SPI_OK_CONNECT != SPI_connect())
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+						errmsg("Unable to connect to execute internal query.")));
+
+	elog(elevel, "Executing SQL: %s", str.data);
+
+	/*
+	 * Do the query. We pass readonly==false, to force SPI to take a new
+	 * snapshot. That ensures that we see all changes by our own transaction.
+	 */
+	ret = SPI_execute(str.data, false, 0);
+	Assert(ret > 0);
+
+	/*
+	 * targrows in analyze_rel_internal() is an int,
+	 * it's unlikely that this query will return more rows
+	 */
+	Assert(SPI_processed < 2);
+	int sampleTuples = (int) SPI_processed;
+
+	/* Ok, read in the tuples to *rows */
+	MemoryContextSwitchTo(oldcxt);
+	vals = (Datum *) palloc0(nattrs * sizeof(Datum));
+	bool isNull = false;
+
+	for (i = 0; i < sampleTuples; i++)
+	{
+		HeapTuple	sampletup = SPI_tuptable->vals[i];
+		int			j;
+
+		for (j = 0; j < nattrs; j++)
+		{
+			int	tupattnum = attrstats[j]->tupattnum;
+			Assert(tupattnum >= 1 && tupattnum <= nattrs);
+
+			vals[tupattnum - 1] = heap_getattr(sampletup, j + 1,
+											   SPI_tuptable->tupdesc,
+											   &isNull);
+			if (isNull)
+			{
+				attrstats[j]->stahll_full = (bytea *)hyperloglog_init_default();
+				continue;
+			}
+
+			int16 typlen;
+			bool typbyval;
+			get_typlenbyval(SPI_tuptable->tupdesc->tdtypeid, &typlen, &typbyval);
+			int hll_length = datumGetSize(vals[tupattnum-1], typbyval, typlen);
+			attrstats[j]->stahll_full = (bytea *)datumCopy(PointerGetDatum(vals[tupattnum - 1]), false, hll_length);
+		}
+	}
+
+	SPI_finish();
+}
 
 /*
  * This performs the same job as acquire_sample_rows() in PostgreSQL, but
@@ -3582,10 +3701,13 @@ merge_leaf_stats(VacAttrStatsP stats,
 	// NDV calculations
 	float4 colAvgWidth = 0;
 	float4 nullCount = 0;
+	bool fHllFullScan = true;
 	HLLCounter *hllcounters = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
+	HLLCounter *hllcounters_fullscan = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
 	HLLCounter *hllcounters_copy = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
 
 	HLLCounter finalHLL = NULL;
+	HLLCounter finalHLLFull = NULL;
 	int i = 0, j;
 	double ndistinct = 0.0;
 	foreach (lc, oid_list)
@@ -3607,6 +3729,23 @@ merge_leaf_stats(VacAttrStatsP stats,
 		}
 
 		AttStatsSlot hllSlot;
+
+		if (fHllFullScan)
+		{
+			get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_FULLHLL,
+							 InvalidOid, ATTSTATSSLOT_VALUES);
+
+			if (hllSlot.nvalues > 0)
+			{
+				hllcounters_fullscan[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
+				finalHLLFull = hyperloglog_merge(finalHLLFull, hllcounters_fullscan[i]);
+				free_attstatsslot(&hllSlot);
+			}
+			else
+			{
+				fHllFullScan = false;
+			}
+		}
 		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL,
 						 InvalidOid, ATTSTATSSLOT_VALUES);
 
@@ -3623,7 +3762,16 @@ merge_leaf_stats(VacAttrStatsP stats,
 		i++;
 	}
 
-	if (finalHLL != NULL)
+	if (fHllFullScan)
+	{
+		ndistinct = hyperloglog_get_estimate(finalHLLFull);
+		if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.05)
+		{
+			allDistinct = true;
+		}
+		nmultiple = ndistinct;
+	}
+	else if (finalHLL != NULL)
 	{
 		ndistinct = hyperloglog_get_estimate(finalHLL);
 		if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.05)
@@ -3673,6 +3821,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	}
 
 	pfree(hllcounters);
+	pfree(hllcounters_fullscan);
 	pfree(hllcounters_copy);
 	pfree(nDistincts);
 	pfree(nMultiples);
