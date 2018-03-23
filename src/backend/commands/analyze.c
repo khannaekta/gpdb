@@ -147,6 +147,7 @@ static void analyzeEstimateIndexpages(Relation onerel, Relation indrel, BlockNum
 
 static void analyze_rel_internal(Oid relid, VacuumStmt *vacstmt,
 					 BufferAccessStrategy bstrategy);
+static void acquire_hll_by_query(Relation onerel, int nattrs, VacAttrStats **attrstats);
 
 /*
  *	analyze_rel() -- analyze one relation
@@ -551,6 +552,15 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	 */
 	colLargeRowIndexes = (RowIndexes **) palloc(sizeof(RowIndexes *) * attr_cnt);
 
+	if (vacstmt->options & VACOPT_FULLSCAN)
+	{
+		if(rel_part_status(RelationGetRelid(onerel)) != PART_STATUS_ROOT)
+		{
+			acquire_hll_by_query(onerel, attr_cnt, vacattrstats);
+
+			elog (LOG,"HLL FULL SCAN ");
+		}
+	}
 	if (needs_sample(vacattrstats, attr_cnt))
 	{
 		/*
@@ -566,9 +576,9 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		elog (LOG,"Needs sample for %d " , RelationGetRelid(onerel));
 		rows = NULL;
 		numrows = acquire_sample_rows_by_query(onerel, attr_cnt, vacattrstats, &rows, targrows,
-											   &totalrows, &totaldeadrows, &totalpages,
-											   (vacstmt->options & VACOPT_ROOTONLY) != 0,
-											   colLargeRowIndexes);
+												   &totalrows, &totaldeadrows, &totalpages,
+												   (vacstmt->options & VACOPT_ROOTONLY) != 0,
+												   colLargeRowIndexes);
 	}
 	else
 	{
@@ -645,7 +655,23 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 										 std_fetch_func,
 										 validRowsLength, // numbers of rows in sample excluding toowide if any.
 										 totalrows);
-				if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
+				if(stats->stahll_full != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
+				{
+					MemoryContext old_context;
+					Datum *hll_values;
+
+					old_context = MemoryContextSwitchTo(stats->anl_context);
+					hll_values = (Datum *) palloc(sizeof(Datum));
+
+					int hll_length = datumGetSize(stats->stahll_full, false, -1);
+					hll_values[0] = datumCopy(PointerGetDatum(stats->stahll_full), false, hll_length);
+					MemoryContextSwitchTo(old_context);
+					stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_HLL;
+					stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
+					stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
+					stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
+				}
+				else if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
 				{
 					MemoryContext old_context;
 					Datum *hll_values;
@@ -1610,6 +1636,93 @@ compare_rows(const void *a, const void *b)
 	return 0;
 }
 
+static void
+acquire_hll_by_query(Relation onerel, int nattrs, VacAttrStats **attrstats)
+{
+	StringInfoData str, columnStr;
+	int			i;
+	int			ret;
+	Datum	   *vals;
+	MemoryContext oldcxt;
+	const char *schemaName = NULL;
+	const char *tableName = NULL;
+
+	schemaName = get_namespace_name(RelationGetNamespace(onerel));
+	tableName = RelationGetRelationName(onerel);
+
+	vals = (Datum *) palloc(RelationGetNumberOfAttributes(onerel) * sizeof(Datum));
+	initStringInfo(&str);
+	initStringInfo(&columnStr);
+	for (i = 0; i < nattrs; i++)
+	{
+		vals[i] = (Datum) 0;
+		const char *attname = quote_identifier(NameStr(attrstats[i]->attr->attname));
+		appendStringInfo(&columnStr, "hyperloglog_accum(%s)", attname);
+		if(i != nattrs-1)
+			appendStringInfo(&columnStr, ", ");
+	}
+
+	appendStringInfo(&str, "select %s from %s.%s as Ta ",
+					 columnStr.data,
+					 quote_identifier(schemaName),
+					 quote_identifier(RelationGetRelationName(onerel)));
+
+	oldcxt = CurrentMemoryContext;
+
+	if (SPI_OK_CONNECT != SPI_connect())
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
+						errmsg("Unable to connect to execute internal query.")));
+
+	elog(elevel, "Executing SQL: %s", str.data);
+
+	/*
+	 * Do the query. We pass readonly==false, to force SPI to take a new
+	 * snapshot. That ensures that we see all changes by our own transaction.
+	 */
+	ret = SPI_execute(str.data, false, 0);
+	Assert(ret > 0);
+
+	Assert(ret > 0);
+	/*
+	 * targrows in analyze_rel_internal() is an int,
+	 * it's unlikely that this query will return more rows
+	 */
+	Assert(SPI_processed < 2);
+	int sampleTuples = (int) SPI_processed;
+
+	/* Ok, read in the tuples to *rows */
+	MemoryContextSwitchTo(oldcxt);
+	vals = (Datum *) palloc0(nattrs * sizeof(Datum));
+	bool isNull = false;
+
+	for (i = 0; i < sampleTuples; i++)
+	{
+		HeapTuple	sampletup = SPI_tuptable->vals[i];
+		int			j;
+		int			index = 0;
+
+		for (j = 0; j < nattrs; j++)
+		{
+			int	tupattnum = attrstats[j]->tupattnum;
+			Assert(tupattnum >= 1 && tupattnum <= nattrs);
+
+			vals[tupattnum - 1] = heap_getattr(sampletup, index + 1,
+											   SPI_tuptable->tupdesc,
+											   &isNull);
+			index++; /* Move index to the next table attribute */
+//			attrstats[j]->stahll_full = hyperloglog_init_default();
+			int16 typlen;
+			bool typbyval;
+			get_typlenbyval(SPI_tuptable->tupdesc->tdtypeid, &typlen, &typbyval);
+			int hll_length = datumGetSize(vals[tupattnum-1], typbyval, typlen);
+			attrstats[j]->stahll_full = (bytea *)datumCopy(PointerGetDatum(vals[tupattnum - 1]), false, hll_length);
+		}
+	}
+
+
+
+	SPI_finish();
+}
 
 /*
  * This performs the same job as acquire_sample_rows() in PostgreSQL, but
@@ -2973,6 +3086,12 @@ compute_scalar_stats(VacAttrStatsP stats,
 	SelectSortFunction(mystats->ltopr, false, &cmpFn, &cmpFlags);
 	fmgr_info(cmpFn, &f_cmpfn);
 
+/*	if ( full scan )
+	{
+		call hyperloglog_accum(a) from foo;
+		get that thing and put it in stats->stahllfull
+	}
+ */
 	stats->stahll = hyperloglog_init_default();
 
 	elog(LOG, "Computing Scalar Stats  column %d", stats->attr->attnum);
