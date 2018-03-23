@@ -129,7 +129,10 @@ typedef struct HLLData {
 	/* Number of pages in the partition */
 	float4 relPages;
 
-    /* largest observed 'rho' for each of the 'm' buckets (uses the very same 
+	/* padding to save more values for the future */
+	int32_t padding[11];
+
+    /* largest observed 'rho' for each of the 'm' buckets (uses the very same
      * trick  as in the varlena type in include/c.h where additional memory 
      * is palloc'ed and treated as part of the data array ) */
     char data[1];
