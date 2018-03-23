@@ -652,6 +652,8 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 
 	FIELDS FILL FILTER FORMAT
 
+	FULLSCAN
+
 	GROUP_ID GROUPING
 
 	HASH HOST
@@ -9685,6 +9687,18 @@ AnalyzeStmt:
 					n->va_cols = $5;
 					$$ = (Node *)n;
 				}
+			| analyze_keyword opt_verbose FULLSCAN qualified_name opt_name_list
+				{
+					VacuumStmt *n = makeNode(VacuumStmt);
+					n->options = VACOPT_ANALYZE;
+					if ($2)
+						n->options |= VACOPT_VERBOSE;
+					n->options |= VACOPT_FULLSCAN;
+					n->freeze_min_age = -1;
+					n->relation = $4;
+					n->va_cols = $5;
+					$$ = (Node *)n;
+				}
 			| analyze_keyword opt_verbose ROOTPARTITION qualified_name opt_name_list
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
@@ -14115,6 +14129,7 @@ unreserved_keyword:
 			| FORCE
 			| FORMAT
 			| FORWARD
+			| FULLSCAN
 			| FUNCTION
 			| FUNCTIONS
 			| GLOBAL

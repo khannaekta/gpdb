@@ -2803,6 +2803,7 @@ typedef enum VacuumOption
 	VACOPT_FULL = 1 << 4,		/* FULL (non-concurrent) vacuum */
 	VACOPT_ROOTONLY = 1 << 5,	/* only ANALYZE root partition tables */
 	VACOPT_MERGE = 1 << 6,		/* merge stats */
+	VACOPT_FULLSCAN = 1 << 7,	/* ANALYZE using full table scan */
 } VacuumOption;
 
 typedef enum AOVacuumPhase
