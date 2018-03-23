@@ -96,6 +96,7 @@ typedef struct VacAttrStats
 	Datum	   *stavalues[STATISTIC_NUM_SLOTS];
 
 	HLLCounter stahll;
+	bytea *stahll_full;
 	/*
 	 * These fields describe the stavalues[n] element types. They will be
 	 * initialized to be the same as the column's that's underlying the slot,
