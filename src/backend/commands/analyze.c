@@ -684,12 +684,12 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 					int hll_length = datumGetSize(stats->stahll_full, false, -1);
 					hll_values[0] = datumCopy(PointerGetDatum(stats->stahll_full), false, hll_length);
 					MemoryContextSwitchTo(old_context);
-					stats->stakind[STATISTIC_NUM_SLOTS-2] = STATISTIC_KIND_FULLHLL;
-					stats->stavalues[STATISTIC_NUM_SLOTS-2] = hll_values;
-					stats->numvalues[STATISTIC_NUM_SLOTS-2] =  1;
-					stats->statyplen[STATISTIC_NUM_SLOTS-2] = hll_length;
+					stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_FULLHLL;
+					stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
+					stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
+					stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
 				}
-				if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
+				else if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
 				{
 					MemoryContext old_context;
 					Datum *hll_values;
@@ -1140,7 +1140,7 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	 * the type of the data being analyzed, but the type-specific typanalyze
 	 * function can change them if it wants to store something else.
 	 */
-	for (i = 0; i < STATISTIC_NUM_SLOTS-2; i++)
+	for (i = 0; i < STATISTIC_NUM_SLOTS-1; i++)
 	{
 		stats->statypid[i] = stats->attrtypid;
 		stats->statyplen[i] = stats->attrtype->typlen;
@@ -1157,12 +1157,6 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 	stats->statyplen[i] = -1; // variable length type
 	stats->statypbyval[i] = false; // bytea is pass by reference
 	stats->statypalign[i] = 'i'; // INT alignment (4-byte)
-
-	stats->statypid[i+1] = 17; // oid for bytea
-	stats->statyplen[i+1] = -1; // variable length type
-	stats->statypbyval[i+1] = false; // bytea is pass by reference
-	stats->statypalign[i+1] = 'i'; // INT alignment (4-byte)
-
 
 	/*
 	 * Call the type-specific typanalyze function.	If none is specified, use
@@ -3701,7 +3695,6 @@ merge_leaf_stats(VacAttrStatsP stats,
 	// NDV calculations
 	float4 colAvgWidth = 0;
 	float4 nullCount = 0;
-	bool fHllFullScan = true;
 	HLLCounter *hllcounters = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
 	HLLCounter *hllcounters_fullscan = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
 	HLLCounter *hllcounters_copy = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
@@ -3710,6 +3703,9 @@ merge_leaf_stats(VacAttrStatsP stats,
 	HLLCounter finalHLLFull = NULL;
 	int i = 0, j;
 	double ndistinct = 0.0;
+	int fullhll_count = 0;
+	int samplehll_count = 0;
+	int totalhll_count = 0;
 	foreach (lc, oid_list)
 	{
 		Oid relid = lfirst_oid(lc);
@@ -3730,22 +3726,18 @@ merge_leaf_stats(VacAttrStatsP stats,
 
 		AttStatsSlot hllSlot;
 
-		if (fHllFullScan)
-		{
-			get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_FULLHLL,
-							 InvalidOid, ATTSTATSSLOT_VALUES);
+		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_FULLHLL,
+						 InvalidOid, ATTSTATSSLOT_VALUES);
 
-			if (hllSlot.nvalues > 0)
-			{
-				hllcounters_fullscan[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
-				finalHLLFull = hyperloglog_merge(finalHLLFull, hllcounters_fullscan[i]);
-				free_attstatsslot(&hllSlot);
-			}
-			else
-			{
-				fHllFullScan = false;
-			}
+		if (hllSlot.nvalues > 0)
+		{
+			hllcounters_fullscan[i] = (HLLCounter) DatumGetByteaP(hllSlot.values[0]);
+			finalHLLFull = hyperloglog_merge(finalHLLFull, hllcounters_fullscan[i]);
+			free_attstatsslot(&hllSlot);
+			fullhll_count++;
+			totalhll_count++;
 		}
+
 		get_attstatsslot(&hllSlot, heaptupleStats[i], STATISTIC_KIND_HLL,
 						 InvalidOid, ATTSTATSSLOT_VALUES);
 
@@ -3758,11 +3750,13 @@ merge_leaf_stats(VacAttrStatsP stats,
 			hllcounters_copy[i] = hll_copy(hllcounters[i]);
 			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
 			free_attstatsslot(&hllSlot);
+			samplehll_count++;
+			totalhll_count++;
 		}
 		i++;
 	}
 
-	if (fHllFullScan)
+	if (fullhll_count == totalhll_count)
 	{
 		ndistinct = hyperloglog_get_estimate(finalHLLFull);
 		if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.05)
@@ -3771,7 +3765,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		}
 		nmultiple = ndistinct;
 	}
-	else if (finalHLL != NULL)
+	else if (finalHLL != NULL && samplehll_count == totalhll_count)
 	{
 		ndistinct = hyperloglog_get_estimate(finalHLL);
 		if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.05)
@@ -3819,7 +3813,16 @@ merge_leaf_stats(VacAttrStatsP stats,
 			}
 		}
 	}
-
+	else
+	{
+		pfree(hllcounters);
+		pfree(hllcounters_fullscan);
+		pfree(hllcounters_copy);
+		pfree(nDistincts);
+		pfree(nMultiples);
+		pfree(nUniques);
+		elog(ERROR,"ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for the merge, rerun ANALYZE or ANALYZE FULLSCAN");
+	}
 	pfree(hllcounters);
 	pfree(hllcounters_fullscan);
 	pfree(hllcounters_copy);
