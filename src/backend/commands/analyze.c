@@ -2493,12 +2493,6 @@ std_typanalyze(VacAttrStats *stats)
 	}
 	else if (OidIsValid(ltopr) && OidIsValid(eqopr))
 	{
-		stats->compute_stats = compute_scalar_stats;
-		/* Might as well use the same minrows as below */
-		stats->minrows = 300 * attr->attstattarget;
-	}
-	else if (OidIsValid(ltopr) && OidIsValid(eqopr))
-	{
 		/* Seems to be a scalar datatype */
 		stats->compute_stats = compute_scalar_stats;
 		/*--------------------
@@ -2572,8 +2566,6 @@ compute_minimal_stats(VacAttrStatsP stats,
 							   stats->attr->attlen < 0);
 	FmgrInfo	f_cmpeq;
 
-	elog(LOG, "Computing Minimal Stats column %d", stats->attr->attnum);
-
 	typedef struct
 	{
 		Datum		value;
@@ -2596,6 +2588,10 @@ compute_minimal_stats(VacAttrStatsP stats,
 
 	fmgr_info(mystats->eqfunc, &f_cmpeq);
 
+	stats->stahll = hyperloglog_init_default();
+
+	elog(LOG, "Computing Minimal Stats column %d", stats->attr->attnum);
+
 	for (i = 0; i < samplerows; i++)
 	{
 		Datum		value;
@@ -2615,6 +2611,8 @@ compute_minimal_stats(VacAttrStatsP stats,
 			continue;
 		}
 		nonnull_cnt++;
+
+		stats->stahll = hyperloglog_add_item(stats->stahll, value, stats->attr->attlen, stats->attr->attbyval, stats->attr->attalign);
 
 		/*
 		 * If it's a variable-width field, add up widths for average width
@@ -2714,6 +2712,10 @@ compute_minimal_stats(VacAttrStatsP stats,
 				break;
 			summultiple += track[nmultiple].count;
 		}
+
+		stats->stahll->nmultiples = nmultiple;
+		stats->stahll->ndistinct = track_cnt;
+		stats->stahll->samplerows = samplerows;
 
 		if (nmultiple == 0)
 		{
@@ -3556,11 +3558,11 @@ merge_leaf_stats(VacAttrStatsP stats,
 	HLLCounter *hllcounters_copy = (HLLCounter *) palloc0(numPartitions * sizeof(HLLCounter));
 
 	HLLCounter finalHLL = NULL;
-	int i, j;
+	int i = 0, j;
 	double ndistinct = 0.0;
-	for (i = 0; i < numPartitions; i++)
+	foreach (lc, oid_list)
 	{
-		Oid relid = list_nth_oid(oid_list, i);
+		Oid relid = lfirst_oid(lc);
 		colAvgWidth =
 			colAvgWidth +
 			get_attavgwidth(relid, stats->attr->attnum) * relTuples[i];
@@ -3572,6 +3574,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		// if there is no colstats, we can skip this partition's stats
 		if (!HeapTupleIsValid(heaptupleStats[i]))
 		{
+			i++;
 			continue;
 		}
 
@@ -3589,6 +3592,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 			finalHLL = hyperloglog_merge(finalHLL, hllcounters[i]);
 			free_attstatsslot(&hllSlot);
 		}
+		i++;
 	}
 
 	if (finalHLL != NULL)
