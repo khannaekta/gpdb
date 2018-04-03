@@ -27,6 +27,7 @@
 #include "catalog/namespace.h"
 #include "catalog/pg_inherits_fn.h"
 #include "catalog/pg_namespace.h"
+#include "cdb/cdbhash.h"
 #include "cdb/cdbpartition.h"
 #include "cdb/cdbtm.h"
 #include "cdb/cdbvars.h"
@@ -2598,7 +2599,9 @@ std_typanalyze(VacAttrStats *stats)
 	/*
 	 * Determine which standard statistics algorithm to use
 	 */
-	if (rel_part_status(attr->attrelid) == PART_STATUS_ROOT && leaf_parts_analyzed(stats))
+	if (rel_part_status(attr->attrelid) == PART_STATUS_ROOT &&
+		leaf_parts_analyzed(stats) &&
+		isGreenplumDbHashable(attr->atttypid))
 	{
 		stats->merge_stats = true;
 		stats->compute_stats = merge_leaf_stats;
