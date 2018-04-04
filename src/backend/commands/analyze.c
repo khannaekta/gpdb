@@ -3662,6 +3662,9 @@ merge_leaf_stats(VacAttrStatsP stats,
 	}
 	totalrows = totalTuples;
 
+	if (totalrows == 0.0)
+		return;
+
 	MemoryContext old_context;
 
 	HeapTuple *heaptupleStats =
