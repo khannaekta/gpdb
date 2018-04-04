@@ -110,53 +110,16 @@ get_rel_reltuples(Oid relid)
 {
 	float4 relTuples = 0.0;
 
-	StringInfoData	sqlstmt;
-	int			ret;
-	Datum		arrayDatum;
-	bool		isNull;
-	Datum	   *values = NULL;
-	int			valuesLength;
+	HeapTuple	tp;
 
-	initStringInfo(&sqlstmt);
-
-	if (GpPolicyFetch(CurrentMemoryContext, relid)->ptype == POLICYTYPE_ENTRY)
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (HeapTupleIsValid(tp))
 	{
-		appendStringInfo(&sqlstmt, "select pg_catalog.sum(pg_catalog.gp_statistics_estimate_reltuples_relpages_oid(c.oid))::pg_catalog.float4[] "
-						 "from pg_catalog.pg_class c where c.oid=%d", relid);
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+
+		relTuples = reltup->reltuples;
+		ReleaseSysCache(tp);
 	}
-	else
-	{
-		appendStringInfo(&sqlstmt, "select pg_catalog.sum(pg_catalog.gp_statistics_estimate_reltuples_relpages_oid(c.oid))::pg_catalog.float4[] "
-						 "from pg_catalog.gp_dist_random('pg_catalog.pg_class') c where c.oid=%d", relid);
-	}
-
-	if (SPI_OK_CONNECT != SPI_connect())
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-						errmsg("Unable to connect to execute internal query.")));
-
-	elog(elevel, "Executing SQL: %s", sqlstmt.data);
-
-	/* Do the query. */
-	ret = SPI_execute(sqlstmt.data, true, 0);
-	Assert(ret > 0);
-	Assert(SPI_tuptable != NULL);
-	Assert(SPI_processed == 1);
-
-	arrayDatum = heap_getattr(SPI_tuptable->vals[0], 1, SPI_tuptable->tupdesc, &isNull);
-	if (isNull)
-		elog(ERROR, "could not get estimated number of tuples and pages for relation %u", relid);
-
-	deconstruct_array(DatumGetArrayTypeP(arrayDatum),
-					  FLOAT4OID,
-					  sizeof(float4),
-					  true,
-					  'i',
-					  &values, NULL, &valuesLength);
-	Assert(valuesLength == 2);
-
-	relTuples += DatumGetFloat4(values[0]);
-
-	SPI_finish();
 
 	return relTuples;
 }
