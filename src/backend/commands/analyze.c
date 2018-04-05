@@ -3357,6 +3357,21 @@ compute_scalar_stats(VacAttrStatsP stats,
 		}
 
 		/*
+		 * For FULLSCAN HLL, get ndistinct from the HLLCounter
+		 * instead of computing it
+		 */
+		if (stats->stahll_full != NULL)
+		{
+			HLLCounter hLLFull = (HLLCounter) DatumGetByteaP(stats->stahll_full);
+			HLLCounter hllFull_copy = hll_copy(hLLFull);
+			stats->stadistinct = hyperloglog_get_estimate(hllFull_copy);
+			if ((fabs(totalrows - stats->stadistinct) / (float) totalrows) < 0.05)
+			{
+				stats->stadistinct = -1;
+			}
+
+		}
+		/*
 		 * If we estimated the number of distinct values at more than 10% of
 		 * the total row count (a very arbitrary limit), then assume that
 		 * stadistinct should scale with the row count rather than be a fixed
