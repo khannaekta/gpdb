@@ -3749,72 +3749,83 @@ merge_leaf_stats(VacAttrStatsP stats,
 		i++;
 	}
 
-	if (fullhll_count == totalhll_count)
+	if (totalhll_count == 0)
 	{
-		ndistinct = hyperloglog_get_estimate(finalHLLFull);
-		if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.05)
-		{
-			allDistinct = true;
-		}
-		nmultiple = ndistinct;
-	}
-	else if (finalHLL != NULL && samplehll_count == totalhll_count)
-	{
-		ndistinct = hyperloglog_get_estimate(finalHLL);
-		if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.05)
-		{
-			allDistinct = true;
-		}
-		else
-		{
-			int nUnique = 0;
-			for (i = 0; i < numPartitions; i++)
-			{
-				if (nDistincts[i] == 0)
-					continue;
-
-				HLLCounter finalHLL_temp = NULL;
-				for (j = 0; j < numPartitions; j++)
-				{
-					if (i != j && hllcounters_copy[j] != NULL)
-					{
-						HLLCounter temp_hll_counter =
-							hll_copy(hllcounters_copy[j]);
-						finalHLL_temp =
-							hyperloglog_merge(finalHLL_temp, temp_hll_counter);
-					}
-				}
-				if (finalHLL_temp != NULL)
-				{
-					nUniques[i] =
-						ndistinct - hyperloglog_get_estimate(finalHLL_temp);
-					nUnique += nUniques[i];
-					nmultiple += nMultiples[i] * (nUniques[i] / nDistincts[i]);
-				}
-				else
-				{
-					nUnique = ndistinct;
-					break;
-				}
-			}
-
-			nmultiple += ndistinct - nUnique;
-
-			if (nmultiple < 0)
-			{
-				nmultiple = 0;
-			}
-		}
+		/*
+		 * If neither HLL or HLL Full scan stats are available,
+		 * continue merging stats based on the defaults, instead
+		 * of reading them from HLL counter.
+		 */
 	}
 	else
 	{
-		pfree(hllcounters);
-		pfree(hllcounters_fullscan);
-		pfree(hllcounters_copy);
-		pfree(nDistincts);
-		pfree(nMultiples);
-		pfree(nUniques);
-		elog(ERROR,"ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for the merge, rerun ANALYZE or ANALYZE FULLSCAN");
+		if (fullhll_count == totalhll_count)
+		{
+			ndistinct = hyperloglog_get_estimate(finalHLLFull);
+			if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.05)
+			{
+				allDistinct = true;
+			}
+			nmultiple = ndistinct;
+		}
+		else if (finalHLL != NULL && samplehll_count == totalhll_count)
+		{
+			ndistinct = hyperloglog_get_estimate(finalHLL);
+			if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.05)
+			{
+				allDistinct = true;
+			}
+			else
+			{
+				int nUnique = 0;
+				for (i = 0; i < numPartitions; i++)
+				{
+					if (nDistincts[i] == 0)
+						continue;
+
+					HLLCounter finalHLL_temp = NULL;
+					for (j = 0; j < numPartitions; j++)
+					{
+						if (i != j && hllcounters_copy[j] != NULL)
+						{
+							HLLCounter temp_hll_counter =
+								hll_copy(hllcounters_copy[j]);
+							finalHLL_temp =
+								hyperloglog_merge(finalHLL_temp, temp_hll_counter);
+						}
+					}
+					if (finalHLL_temp != NULL)
+					{
+						nUniques[i] =
+							ndistinct - hyperloglog_get_estimate(finalHLL_temp);
+						nUnique += nUniques[i];
+						nmultiple += nMultiples[i] * (nUniques[i] / nDistincts[i]);
+					}
+					else
+					{
+						nUnique = ndistinct;
+						break;
+					}
+				}
+
+				nmultiple += ndistinct - nUnique;
+
+				if (nmultiple < 0)
+				{
+					nmultiple = 0;
+				}
+			}
+		}
+		else
+		{
+			pfree(hllcounters);
+			pfree(hllcounters_fullscan);
+			pfree(hllcounters_copy);
+			pfree(nDistincts);
+			pfree(nMultiples);
+			pfree(nUniques);
+			elog(ERROR,"ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for the merge, rerun ANALYZE or ANALYZE FULLSCAN");
+		}
 	}
 	pfree(hllcounters);
 	pfree(hllcounters_fullscan);
