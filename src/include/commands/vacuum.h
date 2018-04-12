@@ -107,8 +107,8 @@ typedef struct VacAttrStats
 	int			numvalues[STATISTIC_NUM_SLOTS];
 	Datum	   *stavalues[STATISTIC_NUM_SLOTS];
 
-	HLLCounter stahll;
-	bytea *stahll_full;
+	HLLCounter stahll;			/* storing hyperloglog counter for sampled data */
+	bytea *stahll_full;			/* storing hyperloglog counter for entire table scan */
 	/*
 	 * These fields describe the stavalues[n] element types. They will be
 	 * initialized to match attrtypid, but a custom typanalyze function might
