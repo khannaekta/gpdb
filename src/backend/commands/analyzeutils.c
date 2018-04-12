@@ -193,6 +193,7 @@ aggregate_leaf_partition_MCVs
 	TypInfo *typInfo = (TypInfo *) palloc(sizeof(TypInfo));
 	initTypInfo(typInfo, typoid);
 
+	// Hash table for storing combined MCVs
 	HTAB *datumHash = createDatumHashTable(nEntries);
 	float4 sumReltuples = 0;
 
@@ -232,6 +233,7 @@ aggregate_leaf_partition_MCVs
 	{
 		mcvpairArray[i++] = mcvfreq->entry;
 	}
+	/* sort MCVFreqPairs in descending order of frequency */
 	qsort(mcvpairArray, i, sizeof(MCVFreqPair *), mcvpair_cmp);
 
 	/* prepare returning MCV and Freq arrays */
