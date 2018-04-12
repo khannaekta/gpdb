@@ -633,6 +633,11 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 		for (i = 0; i < attr_cnt; i++)
 		{
 			VacAttrStats *stats = vacattrstats[i];
+			/*
+			 * utilize hyperloglog and merge utilities to derive
+			 * root table statistics by directly calling merge_leaf_stats()
+			 * if all leaf partition attributes are analyzed
+			 */
 			if(stats->merge_stats)
 			{
 				(*stats->compute_stats) (stats, std_fetch_func, 0, 0);
@@ -674,6 +679,10 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 										 std_fetch_func,
 										 validRowsLength, // numbers of rows in sample excluding toowide if any.
 										 totalrows);
+				/*
+				 * Store HLL/HLL fullscan information for leaf partitions in
+				 * the stats object
+				 */
 				if(stats->stahll_full != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
 				{
 					MemoryContext old_context;
@@ -1151,7 +1160,7 @@ examine_attribute(Relation onerel, int attnum, Node *index_expr)
 
 	/*
 	 * The last slots of statistics is reservered for hyperloglog counter which
-	 * is saved as a bytea. Therefore the type inforation is hardcoded for the
+	 * is saved as a bytea. Therefore the type information is hardcoded for the
 	 * bytea.
 	 */
 	stats->statypid[i] = 17; // oid for bytea
@@ -3153,6 +3162,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 	SelectSortFunction(mystats->ltopr, false, &cmpFn, &cmpFlags);
 	fmgr_info(cmpFn, &f_cmpfn);
 
+	// Initialize HLL counter to be stored in stats
 	stats->stahll = hyperloglog_init_default();
 
 	elog(LOG, "Computing Scalar Stats  column %d", stats->attr->attnum);
@@ -3303,6 +3313,9 @@ compute_scalar_stats(VacAttrStatsP stats,
 		else
 			stats->stawidth = stats->attrtype->typlen;
 
+		// interpolate NDV calculation based on the hll distinct count
+		// for each column in leaf partitions which will be used later
+		// to merge root stats
 		stats->stahll->nmultiples = nmultiple;
 		stats->stahll->ndistinct = ndistinct;
 		stats->stahll->samplerows = samplerows;
@@ -3780,13 +3793,18 @@ merge_leaf_stats(VacAttrStatsP stats,
 	if (totalhll_count == 0)
 	{
 		/*
-		 * If neither HLL or HLL Full scan stats are available,
+		 * If neither HLL nor HLL Full scan stats are available,
 		 * continue merging stats based on the defaults, instead
 		 * of reading them from HLL counter.
 		 */
 	}
 	else
 	{
+		/*
+		 * If all partitions have HLL full scan counters,
+		 * merge root NDV's based on leaf partition HLL full scan
+		 * counter
+		 */
 		if (fullhll_count == totalhll_count)
 		{
 			ndistinct = hyperloglog_get_estimate(finalHLLFull);
@@ -3796,6 +3814,11 @@ merge_leaf_stats(VacAttrStatsP stats,
 			}
 			nmultiple = ndistinct;
 		}
+		/*
+		 * Else if all partitions have HLL counter based on sampled data,
+		 * merge root NDV's based on leaf partition HLL counter on
+		 * sampled data
+		 */
 		else if (finalHLL != NULL && samplehll_count == totalhll_count)
 		{
 			ndistinct = hyperloglog_get_estimate(finalHLL);
@@ -3846,6 +3869,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		}
 		else
 		{
+			// Else error out due to incompatible leaf HLL counter merge
 			pfree(hllcounters);
 			pfree(hllcounters_fullscan);
 			pfree(hllcounters_copy);
