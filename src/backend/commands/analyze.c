@@ -3780,7 +3780,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		if (fullhll_count == totalhll_count)
 		{
 			ndistinct = hyperloglog_get_estimate(finalHLLFull);
-			if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.05)
+			if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.003)
 			{
 				allDistinct = true;
 			}
@@ -3794,7 +3794,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 		else if (finalHLL != NULL && samplehll_count == totalhll_count)
 		{
 			ndistinct = hyperloglog_get_estimate(finalHLL);
-			if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.05)
+			if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.003)
 			{
 				allDistinct = true;
 			}
