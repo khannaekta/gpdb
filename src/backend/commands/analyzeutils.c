@@ -1061,7 +1061,7 @@ needs_sample(VacAttrStats **vacattrstats, int attr_cnt)
 }
 
 /*
- *	leaf_parts_analyzed() -- checks if all the leaf partitions analyzed
+ *	leaf_parts_analyzed() -- checks if all the leaf partitions are analyzed
  *
  *	We use this to determine if all the leaf partitions are analyzed and
  *	the statistics are in place to be able to merge and generate meaningful
