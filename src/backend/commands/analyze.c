@@ -69,6 +69,13 @@
  */
 #define WIDTH_THRESHOLD  1024
 
+/*
+ * For Hyperloglog, we define an error margin of 0.3%. If the number of
+ * distinct values estimated by hyperloglog is within an error of 0.3%,
+ * we consider everything as distinct.
+ */
+#define HLL_ERROR_MARGIN  0.003
+
 /* Data structure for Algorithm S from Knuth 3.4.2 */
 typedef struct
 {
@@ -684,36 +691,32 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 				 * Store HLL/HLL fullscan information for leaf partitions in
 				 * the stats object
 				 */
-				if(stats->stahll_full != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
+				if (rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
 				{
 					MemoryContext old_context;
 					Datum *hll_values;
 
 					old_context = MemoryContextSwitchTo(stats->anl_context);
 					hll_values = (Datum *) palloc(sizeof(Datum));
+					int2 hll_length = 0;
+					int2 stakind = 0;
+					if(stats->stahll_full != NULL)
+					{
+						hll_length = datumGetSize(stats->stahll_full, false, -1);
+						hll_values[0] = datumCopy(PointerGetDatum(stats->stahll_full), false, hll_length);
+						stakind = STATISTIC_KIND_FULLHLL;
+					}
+					else if(stats->stahll != NULL)
+					{
+						stats->stahll->relPages = totalpages;
+						stats->stahll->relTuples = totalrows;
 
-					int hll_length = datumGetSize(stats->stahll_full, false, -1);
-					hll_values[0] = datumCopy(PointerGetDatum(stats->stahll_full), false, hll_length);
+						hll_length = hyperloglog_length(stats->stahll);
+						hll_values[0] = datumCopy(PointerGetDatum(stats->stahll), false, hll_length);
+						stakind = STATISTIC_KIND_HLL;
+					}
 					MemoryContextSwitchTo(old_context);
-					stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_FULLHLL;
-					stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
-					stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
-					stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
-				}
-				else if(stats->stahll != NULL && rel_part_status(stats->attr->attrelid) == PART_STATUS_LEAF)
-				{
-					MemoryContext old_context;
-					Datum *hll_values;
-					stats->stahll->relPages = totalpages;
-					stats->stahll->relTuples = totalrows;
-
-					old_context = MemoryContextSwitchTo(stats->anl_context);
-					hll_values = (Datum *) palloc(sizeof(Datum));
-
-					int hll_length = hyperloglog_length(stats->stahll);
-					hll_values[0] = datumCopy(PointerGetDatum(stats->stahll), false, hll_length);
-					MemoryContextSwitchTo(old_context);
-					stats->stakind[STATISTIC_NUM_SLOTS-1] = STATISTIC_KIND_HLL;
+					stats->stakind[STATISTIC_NUM_SLOTS-1] = stakind;
 					stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
 					stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
 					stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
@@ -1135,11 +1138,11 @@ examine_attribute(Relation onerel, int attnum)
 	}
 
 	/*
-	 * The last slots of statistics is reservered for hyperloglog counter which
+	 * The last slots of statistics is reserved for hyperloglog counter which
 	 * is saved as a bytea. Therefore the type information is hardcoded for the
 	 * bytea.
 	 */
-	stats->statypid[i] = 17; // oid for bytea
+	stats->statypid[i] = BYTEAOID; // oid for bytea
 	stats->statyplen[i] = -1; // variable length type
 	stats->statypbyval[i] = false; // bytea is pass by reference
 	stats->statypalign[i] = 'i'; // INT alignment (4-byte)
@@ -1665,6 +1668,16 @@ compare_rows(const void *a, const void *b)
 	return 0;
 }
 
+/*
+ * This function acquires the HLL counter for the entire table by
+ * using the hyperloglog extension hyperloglog_accum().
+ *
+ * Unlike acquire_sample_rows(), this returns the HLL counter for
+ * the entire table, and not jsut a sample, and it stores the HLL
+ * counter into a separate attribute in the stats stahll_full to
+ * distinguish it from the HLL for sampled data. This functions scans
+ * the full table only once.
+ */
 static void
 acquire_hll_by_query(Relation onerel, int nattrs, VacAttrStats **attrstats)
 {
@@ -1673,18 +1686,13 @@ acquire_hll_by_query(Relation onerel, int nattrs, VacAttrStats **attrstats)
 	int			ret;
 	Datum	   *vals;
 	MemoryContext oldcxt;
-	const char *schemaName = NULL;
-	const char *tableName = NULL;
+	const char *schemaName = get_namespace_name(RelationGetNamespace(onerel));
+	const char *tableName = RelationGetRelationName(onerel);
 
-	schemaName = get_namespace_name(RelationGetNamespace(onerel));
-	tableName = RelationGetRelationName(onerel);
-
-	vals = (Datum *) palloc(RelationGetNumberOfAttributes(onerel) * sizeof(Datum));
 	initStringInfo(&str);
 	initStringInfo(&columnStr);
 	for (i = 0; i < nattrs; i++)
 	{
-		vals[i] = (Datum) 0;
 		const char *attname = quote_identifier(NameStr(attrstats[i]->attr->attname));
 		appendStringInfo(&columnStr, "hyperloglog_accum(%s)", attname);
 		if(i != nattrs-1)
@@ -3669,7 +3677,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 	float *nUniques = (float *) palloc0(sizeof(float) * numPartitions);
 	int relNum = 0;
 	float totalTuples = 0;
-	float nmultiple = 0;
+	float nmultiple = 0; // number of values that appeared more than once
 	bool allDistinct = false;
 	int slot_idx = 0;
 	samplerows = 0;
@@ -3780,7 +3788,13 @@ merge_leaf_stats(VacAttrStatsP stats,
 		if (fullhll_count == totalhll_count)
 		{
 			ndistinct = hyperloglog_get_estimate(finalHLLFull);
-			if ((fabs(totalrows - ndistinct) / (float) totalrows) < 0.003)
+			/*
+			 * For fullscan the ndistinct is calculated based on the entire table scan
+			 * so if it's within the marginal error, we consider everything as distinct,
+			 * else the ndistinct value will provide the actual value and we do not ,
+			 * need to do any additional calculation for the nmultiple
+			 */
+			if ((fabs(totalrows - ndistinct) / (float) totalrows) < HLL_ERROR_MARGIN)
 			{
 				allDistinct = true;
 			}
@@ -3794,21 +3808,53 @@ merge_leaf_stats(VacAttrStatsP stats,
 		else if (finalHLL != NULL && samplehll_count == totalhll_count)
 		{
 			ndistinct = hyperloglog_get_estimate(finalHLL);
+			/*
+			 * For sampled HLL counter, the ndistinct calculated is based on the
+			 * sampled data. We consider everything distinct if the ndistinct
+			 * calculated is within marginal error, else we need to calculate
+			 * the number of distinct values for the table based on the estimator
+			 * proposed by Haas and Stokes, used later in the code.
+			 */
 			if ((fabs(samplerows - ndistinct) / (float) samplerows) < 0.003)
 			{
 				allDistinct = true;
 			}
 			else
 			{
+				/*
+				 * The hyperloglog_get_estimate() utility merges the number of
+				 * distnct values accurately, but for the NDV estimator used later
+				 * in the code, we also need additional information for nmultiples,
+				 * i.e., the number of values that appeared more than once.
+				 * At this point we have the information for nmultiples for each
+				 * partition, but the nmultiples in one partition can be accounted as
+				 * a distinct value in some other partition. In order to merge the
+				 * approximate nmultiples better, we extract unique values in each
+				 * partition as follows,
+				 * P1 -> ndistinct1 , nmultiple1
+				 * P2 -> ndistinct2 , nmultiple2
+				 * P3 -> ndistinct3 , nmultiple3
+				 * Root -> ndistinct(Root) (using hyperloglog_get_estimate)
+				 * nunique1 = ndistinct(Root) - hyperloglog_get_estimate(P2 & P3)
+				 * nunique2 = ndistinct(Root) - hyperloglog_get_estimate(P1 & P3)
+				 * nunique3 = ndistinct(Root) - hyperloglog_get_estimate(P2 & P1)
+				 * And finally once we have unique values in individual partitions,
+				 * we can get the nmultiples on the ROOT as seen below,
+				 * nmultiple(Root) = ndistinct(Root) - (sum of uniques in each partition)
+				 */
 				int nUnique = 0;
 				for (i = 0; i < numPartitions; i++)
 				{
+					// i -> partition number for which we wish
+					// to calculate the number of unique values
 					if (nDistincts[i] == 0)
 						continue;
 
 					HLLCounter finalHLL_temp = NULL;
 					for (j = 0; j < numPartitions; j++)
 					{
+						// merge the HLL counters for each partition
+						// except the current partition (i)
 						if (i != j && hllcounters_copy[j] != NULL)
 						{
 							HLLCounter temp_hll_counter =
@@ -3819,6 +3865,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 					}
 					if (finalHLL_temp != NULL)
 					{
+						// Calculating uniques in each partition
 						nUniques[i] =
 							ndistinct - hyperloglog_get_estimate(finalHLL_temp);
 						nUnique += nUniques[i];
@@ -3831,6 +3878,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 					}
 				}
 
+				// nmultiples for the ROOT
 				nmultiple += ndistinct - nUnique;
 
 				if (nmultiple < 0)
