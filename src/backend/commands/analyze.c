@@ -469,7 +469,8 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 		{
 			if (vacattrstats[i]->merge_stats == false)
 			{
-				elog(ERROR,"Cannot run ANALYZE MERGE since not all non-empty leaf partitions have available statistics for the merge");
+				ereport(ERROR,
+						(errmsg("Cannot run ANALYZE MERGE since not all non-empty leaf partitions have available statistics for the merge")));
 			}
 		}
 	}
@@ -570,10 +571,6 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 	 */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
 
-	/*
-	 * Acquire the sample rows
-	 */
-	// GPDB_90_MERGE_FIXME: Need to implement 'acuire_inherited_sample_rows_by_query'
 	if (vacstmt->options & VACOPT_FULLSCAN)
 	{
 		if(rel_part_status(RelationGetRelid(onerel)) != PART_STATUS_ROOT)
@@ -602,9 +599,9 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 											   (vacstmt->options & VACOPT_ROOTONLY) != 0,
 											   colLargeRowIndexes);
 
-	/* change the privilige back to the table owner */
-	SetUserIdAndSecContext(onerel->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+		/* change the privilige back to the table owner */
+		SetUserIdAndSecContext(onerel->rd_rel->relowner,
+							   save_sec_context | SECURITY_RESTRICTED_OPERATION);
 	}
 	else
 	{
@@ -3924,7 +3921,9 @@ merge_leaf_stats(VacAttrStatsP stats,
 			pfree(nDistincts);
 			pfree(nMultiples);
 			pfree(nUniques);
-			elog(ERROR,"ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for the merge, rerun ANALYZE or ANALYZE FULLSCAN");
+			ereport(ERROR,
+					 (errmsg("ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for merge"),
+					 errhint("Re-run ANALYZE or ANALYZE FULLSCAN")));
 		}
 	}
 	pfree(hllcounters);

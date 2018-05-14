@@ -124,6 +124,25 @@ get_rel_reltuples(Oid relid)
 	return relTuples;
 }
 
+int4
+get_rel_relpages(Oid relid)
+{
+	int4 relPages = 0.0;
+
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_class reltup = (Form_pg_class) GETSTRUCT(tp);
+
+		relPages = reltup->relpages;
+		ReleaseSysCache(tp);
+	}
+
+	return relPages;
+}
+
 /*
  * Given column stats of an attribute, build an MCVFreqPair and add it to the hash table.
  * If the MCV to be added already exist in the hash table, we increment its count value.
@@ -1065,8 +1084,10 @@ needs_sample(VacAttrStats **vacattrstats, int attr_cnt)
  *
  *	We use this to determine if all the leaf partitions are analyzed and
  *	the statistics are in place to be able to merge and generate meaningful
- *	statistics for the root partition. If one partition is analyzed but the
- *	other is not, root statistics will be bogus if we continue merging.
+ *	statistics for the root partition. If any partition is analyzed and the
+ *	attstattarget is set to collect stats, but there are no statistics for
+ *  the partition in pg_statistics, root statistics will be bogus if we continue
+ *  merging.
  */
 bool
 leaf_parts_analyzed(VacAttrStats *stats)
@@ -1076,26 +1097,31 @@ leaf_parts_analyzed(VacAttrStats *stats)
 	Assert(pn);
 
 	List *oid_list = all_leaf_partition_relids(pn); /* all leaves */
-	bool all_parts_empty = true;
 	ListCell *lc;
+	bool any_part_analyzed = false;
 	foreach(lc, oid_list)
 	{
 		Oid partRelid = lfirst_oid(lc);
-		float4 relTuples = get_rel_reltuples(partRelid);
-		if (relTuples == 0.0)
+		int4 relpages = get_rel_relpages(partRelid);
+
+		if (relpages == 0.0)
 			continue;
-		HeapTuple heaptupleStats = get_att_stats(partRelid, stats->attr->attnum);
-		all_parts_empty = false;
-
-		// if there is no colstats
-		if (!HeapTupleIsValid(heaptupleStats))
+		float4 reltuples = get_rel_reltuples(partRelid);
+		if (reltuples == 0.0)
 		{
-			return false;
+			any_part_analyzed = true;
+			continue;
 		}
-		heap_freetuple(heaptupleStats);
-	}
-	if (all_parts_empty)
-		return false;
 
-	return true;
+		HeapTuple heaptupleStats = get_att_stats(partRelid, stats->attr->attnum);
+
+		// Partition is analyzed but there are no colstats
+		if (HeapTupleIsValid(heaptupleStats))
+		{
+			any_part_analyzed = true;
+			heap_freetuple(heaptupleStats);
+		}
+	}
+
+	return any_part_analyzed;
 }
