@@ -5,7 +5,7 @@ CREATE DATABASE incrementalanalyze;
 DROP SCHEMA IF EXISTS incremental_analyze;
 CREATE SCHEMA incremental_analyze;
 -- end_ignore
--- different data types
+-- Test ANALYZE for different data types
 -- Case 1: Partitions have MCVs but after merge, none of the partition MCVs 
 -- qualify as a global MCV for the root and they are used to create the
 -- root histogram
@@ -480,6 +480,68 @@ INSERT INTO foo SELECT i, i%3+3, 'text_'||i%200 FROM generate_series(1,1000)i;
 SET default_statistics_target to 3;
 ANALYZE FULLSCAN foo;
 SELECT tablename, n_distinct FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+-- Test ANLYZE MERGE behavior
+-- Merge stats from only one partition
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+INSERT INTO foo SELECT i, i%6, i%6 FROM generate_series(1,100)i; 
+ANALYZE foo_1_prt_1;
+ANALYZE MERGE foo;
+SELECT tablename, attname, null_frac, n_distinct, most_common_vals, most_common_freqs, histogram_bounds FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+
+-- Merge stats from both partitions
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+INSERT INTO foo SELECT i, i%6, i%6 FROM generate_series(1,100)i; 
+ANALYZE foo_1_prt_1;
+ANALYZE foo_1_prt_2;
+ANALYZE MERGE foo;
+SELECT tablename, attname, null_frac, n_distinct, most_common_vals, most_common_freqs, histogram_bounds FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+
+-- No stats after MERGE
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+ANALYZE foo_1_prt_1;
+ANALYZE foo_1_prt_2;
+ANALYZE MERGE foo;
+SELECT tablename, attname, null_frac, n_distinct, most_common_vals, most_common_freqs, histogram_bounds FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+
+-- Merge stats from only one partition
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+INSERT INTO foo SELECT i, i%6, i%6 FROM generate_series(1,100)i; 
+SET allow_system_table_mods = 'DML';
+UPDATE pg_attribute SET attstattarget=0 WHERE attrelid = 'foo_1_prt_1'::regclass and ATTNAME in ('a','b','c');
+ANALYZE foo_1_prt_1;
+ANALYZE foo_1_prt_2;
+ANALYZE MERGE foo;
+SELECT tablename, attname, null_frac, n_distinct, most_common_vals, most_common_freqs, histogram_bounds FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+
+-- Merge stats from only one partition one column
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+INSERT INTO foo SELECT i, i%6, i%6 FROM generate_series(1,100)i; 
+ANALYZE foo_1_prt_1(c);
+ANALYZE MERGE foo(c);
+SELECT tablename, attname, null_frac, n_distinct, most_common_vals, most_common_freqs, histogram_bounds FROM pg_stats WHERE tablename like 'foo%' ORDER BY attname,tablename;
+
+-- Merge fails as all partitions are not analyzed
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+INSERT INTO foo SELECT i, i%6, i%6 FROM generate_series(1,100)i; 
+ANALYZE MERGE foo;
+
+-- Merge fails as all partitions are empty and are not analyzed
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+ANALYZE MERGE foo;
+
+-- Merge errors on partition of a table
+DROP TABLE IF EXISTS foo;
+CREATE TABLE foo (a int, b int, c int) PARTITION BY RANGE (b) (START (0) END (6) EVERY (3));
+INSERT INTO foo select i, i%6, i%100 FROM generate_series(1,2000)i;
+ANALYZE MERGE foo_1_prt_1;
+
 -- Test merging of leaf stats when one partition has
 -- FULL SCAN HLL and the other has HLL from sample
 DROP TABLE IF EXISTS foo;

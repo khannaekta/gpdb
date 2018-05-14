@@ -457,7 +457,8 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		{
 			if (vacattrstats[i]->merge_stats == false)
 			{
-				elog(ERROR,"Cannot run ANALYZE MERGE since not all non-empty leaf partitions have available statistics for the merge");
+				ereport(ERROR,
+						(errmsg("Cannot run ANALYZE MERGE since not all non-empty leaf partitions have available statistics for the merge")));
 			}
 		}
 	}
@@ -571,10 +572,6 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 	 */
 	SetUserIdAndSecContext(save_userid, save_sec_context);
 
-	/*
-	 * Acquire the sample rows
-	 */
-	// GPDB_90_MERGE_FIXME: Need to implement 'acuire_inherited_sample_rows_by_query'
 	if (vacstmt->options & VACOPT_FULLSCAN)
 	{
 		if(rel_part_status(RelationGetRelid(onerel)) != PART_STATUS_ROOT)
@@ -603,9 +600,9 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 											   (vacstmt->options & VACOPT_ROOTONLY) != 0,
 											   colLargeRowIndexes);
 
-	/* change the privilige back to the table owner */
-	SetUserIdAndSecContext(onerel->rd_rel->relowner,
-						   save_sec_context | SECURITY_RESTRICTED_OPERATION);
+		/* change the privilige back to the table owner */
+		SetUserIdAndSecContext(onerel->rd_rel->relowner,
+							   save_sec_context | SECURITY_RESTRICTED_OPERATION);
 	}
 	else
 	{
@@ -716,10 +713,13 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 						stakind = STATISTIC_KIND_HLL;
 					}
 					MemoryContextSwitchTo(old_context);
-					stats->stakind[STATISTIC_NUM_SLOTS-1] = stakind;
-					stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
-					stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
-					stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
+					if (stakind > 0)
+					{
+						stats->stakind[STATISTIC_NUM_SLOTS-1] = stakind;
+						stats->stavalues[STATISTIC_NUM_SLOTS-1] = hll_values;
+						stats->numvalues[STATISTIC_NUM_SLOTS-1] =  1;
+						stats->statyplen[STATISTIC_NUM_SLOTS-1] = hll_length;
+					}
 				}
 			}
 			else
@@ -3896,7 +3896,9 @@ merge_leaf_stats(VacAttrStatsP stats,
 			pfree(nDistincts);
 			pfree(nMultiples);
 			pfree(nUniques);
-			elog(ERROR,"ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for the merge, rerun ANALYZE or ANALYZE FULLSCAN");
+			ereport(ERROR,
+					 (errmsg("ANALYZE cannot merge since not all non-empty leaf partitions have consistent hyperloglog statistics for merge"),
+					 errhint("Re-run ANALYZE or ANALYZE FULLSCAN")));
 		}
 	}
 	pfree(hllcounters);
