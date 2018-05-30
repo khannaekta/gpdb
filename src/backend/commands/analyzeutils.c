@@ -75,7 +75,7 @@ static float4* buildFreqArrayForStatsEntry(MCVFreqPair** mcvpairArray, int nEntr
 static int datumHashTableMatch(const void*keyPtr1, const void *keyPtr2, Size keysize);
 static uint32 datumHashTableHash(const void *keyPtr, Size keysize);
 static void calculateHashWithHashAny(void *clientData, void *buf, size_t len);
-static HTAB* createDatumHashTable(unsigned int nEntries);
+static HTAB* createDatumHashTable(unsigned int nEntries, Oid typid);
 static MCVFreqPair* MCVFreqPairCopy(MCVFreqPair* mfp);
 static bool containsDatum(HTAB *datumHash, MCVFreqPair *mfp);
 static void addAllMCVsToHashTable
@@ -213,7 +213,7 @@ aggregate_leaf_partition_MCVs
 	initTypInfo(typInfo, typoid);
 
 	// Hash table for storing combined MCVs
-	HTAB *datumHash = createDatumHashTable(nEntries);
+	HTAB *datumHash = createDatumHashTable(nEntries, typInfo->typOid);
 	float4 sumReltuples = 0;
 
 	int numPartitions = list_length(lRelOids);
@@ -412,7 +412,10 @@ addMCVToHashTable(HTAB* datumHash, MCVFreqPair *mfp)
 	{
 		/* create a deep copy of MCVFreqPair and put it in the hash table */
 		MCVFreqPair *key = MCVFreqPairCopy(mfp);
-		mcvfreq = hash_search(datumHash, &key, HASH_ENTER, &found);
+//		if (InvalidOid == key->typinfo->ltFuncOp)
+//			mcvfreq = hash_search_with_hash_value(datumHash, &key, key->mcv, HASH_ENTER, &found);
+//		else
+			mcvfreq = hash_search(datumHash, &key, HASH_ENTER, &found);
 		if (mcvfreq == NULL)
 		{
 			ereport(ERROR, (errcode(ERRCODE_OUT_OF_MEMORY), errmsg("out of memory")));
@@ -422,7 +425,10 @@ addMCVToHashTable(HTAB* datumHash, MCVFreqPair *mfp)
 
 	else
 	{
-		mcvfreq = hash_search(datumHash, &mfp, HASH_FIND, &found);
+//		if (InvalidOid == mfp->typinfo->ltFuncOp)
+//			mcvfreq = hash_search_with_hash_value(datumHash, &mfp, mfp->mcv, HASH_FIND, &found);
+//		else
+			mcvfreq = hash_search(datumHash, &mfp, HASH_FIND, &found);
 		Assert(mcvfreq);
 		mcvfreq->entry->count += mfp->count;
 	}
@@ -463,7 +469,12 @@ containsDatum(HTAB *datumHash, MCVFreqPair *mfp)
 {
 	bool found = false;
 	if (datumHash != NULL)
-		hash_search(datumHash, &mfp, HASH_FIND, &found);
+	{
+//		if (mfp->typinfo->ltFuncOp == InvalidOid)
+//			hash_search_with_hash_value(datumHash, &mfp, mfp->mcv, HASH_FIND, &found);
+//		else
+			hash_search(datumHash, &mfp, HASH_FIND, &found);
+	}
 
 	return found;
 }
@@ -478,15 +489,22 @@ containsDatum(HTAB *datumHash, MCVFreqPair *mfp)
  * 	a pointer to the created hash table
  */
 static HTAB*
-createDatumHashTable(unsigned int nEntries)
+createDatumHashTable(unsigned int nEntries, Oid typid)
 {
 	HASHCTL	hash_ctl;
 	MemSet(&hash_ctl, 0, sizeof(hash_ctl));
 
 	hash_ctl.keysize = sizeof(MCVFreqPair*);
 	hash_ctl.entrysize = sizeof(MCVFreqEntry);
-	hash_ctl.hash = datumHashTableHash;
-	hash_ctl.match = datumHashTableMatch;
+	if (!isGreenplumDbHashable(typid))
+	{
+		hash_ctl = int32_hash;
+		hash_ctl.match = (HashCompareFunc) memcpy;
+//		return hash_create("DatumHashTable", nEntries, &hash_ctl, 0);
+	}else{
+		hash_ctl.hash = datumHashTableHash;
+		hash_ctl.match = datumHashTableMatch;
+	}
 
 	return hash_create("DatumHashTable", nEntries, &hash_ctl, HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
 }
