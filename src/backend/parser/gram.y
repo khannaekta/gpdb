@@ -666,9 +666,7 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 %token <keyword>
 	ACTIVE
 
-	CONTAINS CPU_RATE_LIMIT CPUSET
-
-	CREATEEXTTABLE CUBE
+	CONTAINS CPU_RATE_LIMIT CREATEEXTTABLE CUBE
 
 	DECODE DENY DISTRIBUTED DXL
 
@@ -802,7 +800,6 @@ static Node *makeIsNotDistinctFromNode(Node *expr, int position);
 			%nonassoc COPY
 			%nonassoc COST
 			%nonassoc CPU_RATE_LIMIT
-			%nonassoc CPUSET
 			%nonassoc CREATEEXTTABLE
 			%nonassoc CSV
 			%nonassoc CURRENT_P
@@ -1442,10 +1439,6 @@ OptResourceGroupElem:
 			| CPU_RATE_LIMIT SignedIconst
 				{
 					$$ = makeDefElem("cpu_rate_limit", (Node *) makeInteger($2));
-				}
-			| CPUSET Sconst
-				{
-					$$ = makeDefElem("cpuset", (Node *) makeString($2));
 				}
 			| MEMORY_SHARED_QUOTA SignedIconst
 				{
@@ -14810,7 +14803,6 @@ unreserved_keyword:
 			| COPY
 			| COST
 			| CPU_RATE_LIMIT
-			| CPUSET
 			| CREATEEXTTABLE
 			| CSV
 			| CURRENT_P
@@ -15127,7 +15119,6 @@ PartitionIdentKeyword: ABORT_P
 			| COPY
 			| COST
 			| CPU_RATE_LIMIT
-			| CPUSET
 			| CREATEEXTTABLE
 			| CSV
 			| CURSOR

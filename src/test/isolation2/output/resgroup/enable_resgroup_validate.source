@@ -3,19 +3,13 @@
 
 ! chmod 755 @cgroup_mnt_point@/cpuacct/gpdb/*/;
 
-! chmod 755 @cgroup_mnt_point@/cpuset/gpdb/*/;
-
 ! rmdir @cgroup_mnt_point@/cpu/gpdb/*/;
 
 ! rmdir @cgroup_mnt_point@/cpuacct/gpdb/*/;
 
-! rmdir @cgroup_mnt_point@/cpuset/gpdb/*/;
-
 ! rmdir @cgroup_mnt_point@/cpu/gpdb;
 
 ! rmdir @cgroup_mnt_point@/cpuacct/gpdb;
-
-! rmdir @cgroup_mnt_point@/cpuset/gpdb;
 
 -- end_ignore
 
@@ -30,11 +24,7 @@ new GUC value failed validation: [nyu-vm-centos:cgroup is not properly configure
 
 ! mkdir @cgroup_mnt_point@/cpuacct/gpdb;
 
-! mkdir @cgroup_mnt_point@/cpuset/gpdb;
-
 ! chmod 644 @cgroup_mnt_point@/cpu/gpdb;
-
-! chmod 644 @cgroup_mnt_point@/cpuset/gpdb;
 
 -- end_ignore
 
@@ -46,8 +36,6 @@ new GUC value failed validation: [nyu-vm-centos:cgroup is not properly configure
 
 -- start_ignore
 ! chmod 755 @cgroup_mnt_point@/cpu/gpdb;
-
-! chmod 755 @cgroup_mnt_point@/cpuset/gpdb;
 
 ! chmod 444 @cgroup_mnt_point@/cpu/gpdb/cgroup.procs;
 

@@ -38,7 +38,6 @@
 #include "utils/resource_manager.h"
 #include "utils/resowner.h"
 #include "utils/syscache.h"
-#include "utils/faultinjector.h"
 
 #define RESGROUP_DEFAULT_CONCURRENCY (20)
 #define RESGROUP_DEFAULT_MEM_SHARED_QUOTA (20)
@@ -71,6 +70,16 @@ static const char *ResGroupMemAuditorName[] =
 	"cgroup"		// RESGROUP_MEMORY_AUDITOR_CGROUP
 };
 
+/*
+ * The context to pass to callback in ALTER resource group
+ */
+typedef struct {
+	Oid		groupid;
+	ResGroupLimitType	limittype;
+	ResGroupCaps	caps;
+	ResGroupCap		memLimitGap;
+} ResourceGroupAlterCallbackContext;
+
 static int str2Int(const char *str, const char *prop);
 static ResGroupLimitType getResgroupOptionType(const char* defname);
 static ResGroupCap getResgroupOptionValue(DefElem *defel, int type);
@@ -83,8 +92,7 @@ static void insertResgroupCapabilityEntry(Relation rel, Oid groupid, uint16 type
 static void updateResgroupCapabilityEntry(Relation rel,
 										  Oid groupId,
 										  ResGroupLimitType limitType,
-										  ResGroupCap value,
-										  const char *strValue);
+										  ResGroupCap value);
 static void insertResgroupCapabilities(Relation rel, Oid groupId, ResGroupCaps *caps);
 static void deleteResgroupCapabilities(Oid groupid);
 static void checkAuthIdForDrop(Oid groupId);
@@ -92,7 +100,6 @@ static void createResgroupCallback(XactEvent event, void *arg);
 static void dropResgroupCallback(XactEvent event, void *arg);
 static void alterResgroupCallback(XactEvent event, void *arg);
 static int getResGroupMemAuditor(char *name);
-static bool checkCpusetSyntax(const char *cpuset);
 
 /*
  * CREATE RESOURCE GROUP
@@ -217,48 +224,19 @@ CreateResourceGroup(CreateResourceGroupStmt *stmt)
 	/* Add this group into shared memory */
 	if (IsResGroupActivated())
 	{
-		ResourceGroupCallbackContext *callbackCtx;
+		Oid			*callbackArg;
 
 		AllocResGroupEntry(groupid, &caps);
 
 		/* Argument of callback function should be allocated in heap region */
-		callbackCtx = (ResourceGroupCallbackContext *)
-			MemoryContextAlloc(TopMemoryContext, sizeof(*callbackCtx));
-		callbackCtx->groupid = groupid;
-		callbackCtx->caps = caps;
-		RegisterXactCallbackOnce(createResgroupCallback, callbackCtx);
+		callbackArg = (Oid *)MemoryContextAlloc(TopMemoryContext, sizeof(Oid));
+		*callbackArg = groupid;
+		RegisterXactCallbackOnce(createResgroupCallback, (void *)callbackArg);
 
 		/* Create os dependent part for this resource group */
 		ResGroupOps_CreateGroup(groupid);
-
+		ResGroupOps_SetCpuRateLimit(groupid, caps.cpuRateLimit);
 		ResGroupOps_SetMemoryLimit(groupid, caps.memLimit);
-
-		if (caps.cpuRateLimit != CPU_RATE_LIMIT_DISABLED)
-		{
-			ResGroupOps_SetCpuRateLimit(groupid, caps.cpuRateLimit);
-		}
-		else if (!CpusetIsEmpty(caps.cpuset))
-		{
-			if (gp_resource_group_enable_cgroup_cpuset)
-			{
-				ResGroupOps_SetCpuSet(groupid, caps.cpuset);
-				/* reset default group, subtract new group cpu cores */
-				char defaultGroupCpuset[MaxCpuSetLength];
-				ResGroupOps_GetCpuSet(DEFAULT_CPUSET_GROUP_ID,
-									  defaultGroupCpuset,
-									  MaxCpuSetLength);
-				CpusetDifference(defaultGroupCpuset, caps.cpuset, MaxCpuSetLength);
-				ResGroupOps_SetCpuSet(DEFAULT_CPUSET_GROUP_ID, defaultGroupCpuset);
-			}
-			else
-			{
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("cpuset is disabled for cpuset/gpdb "
-								"does not exist")));
-			}
-		}
-		SIMPLE_FAULT_INJECTOR(CreateResourceGroupFail);
 	}
 	else if (Gp_role == GP_ROLE_DISPATCH)
 		ereport(WARNING,
@@ -273,13 +251,11 @@ void
 DropResourceGroup(DropResourceGroupStmt *stmt)
 {
 	Relation	 pg_resgroup_rel;
-	Relation	 pg_resgroupcapability_rel;
 	HeapTuple	 tuple;
 	ScanKeyData	 scankey;
 	SysScanDesc	 sscan;
 	Oid			 groupid;
-	ResGroupCaps		caps;
-	ResourceGroupCallbackContext	*callbackCtx;
+	Oid			*callbackArg;
 
 	/* Permission check - only superuser can drop resource groups. */
 	if (!superuser())
@@ -361,10 +337,9 @@ DropResourceGroup(DropResourceGroupStmt *stmt)
 	if (IsResGroupActivated())
 	{
 		/* Argument of callback function should be allocated in heap region */
-		callbackCtx = (ResourceGroupCallbackContext *)
-			MemoryContextAlloc(TopMemoryContext, sizeof(*callbackCtx));
-		callbackCtx->groupid = groupid;
-		RegisterXactCallbackOnce(dropResgroupCallback, callbackCtx);
+		callbackArg = (Oid *)MemoryContextAlloc(TopMemoryContext, sizeof(Oid));
+		*callbackArg = groupid;
+		RegisterXactCallbackOnce(dropResgroupCallback, (void *)callbackArg);
 	}
 }
 
@@ -379,10 +354,9 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 	DefElem		*defel;
 	ResGroupLimitType	limitType;
 	ResGroupCaps		caps;
-	ResGroupCaps		oldCaps;
-	ResGroupCap			value = 0;
-	const char *cpuset;
-	ResourceGroupCallbackContext	*callbackCtx;
+	ResGroupCap			*capArray;
+	ResGroupCap			value;
+	ResGroupCap			oldValue;
 
 	/* Permission check - only superuser can alter resource groups. */
 	if (!superuser())
@@ -396,34 +370,12 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 
 	limitType = getResgroupOptionType(defel->defname);
 	if (limitType == RESGROUP_LIMIT_TYPE_UNKNOWN)
-	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("option \"%s\" not recognized", defel->defname)));
-	}
-	else if (limitType == RESGROUP_LIMIT_TYPE_CPUSET)
-	{
-		if (!IsResGroupActivated())
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("must specify cpuset when resource group is activated")));
-		}
-		else if (!gp_resource_group_enable_cgroup_cpuset)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("cpuset is disabled for cpuset/gpdb "
-							"does not exist")));
-		}
-		cpuset = defGetString(defel);
-		checkCpusetSyntax(cpuset);
-	}
-	else
-	{
-		value = getResgroupOptionValue(defel, limitType);
-		checkResgroupCapLimit(limitType, value);
-	}
+
+	value = getResgroupOptionValue(defel, limitType);
+	checkResgroupCapLimit(limitType, value);
 
 	/*
 	 * Check the pg_resgroup relation to be certain the resource group already
@@ -455,68 +407,21 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 										  AccessExclusiveLock);
 
 	/* Load current resource group capabilities */
-	GetResGroupCapabilities(pg_resgroupcapability_rel, groupid, &oldCaps);
-	caps = oldCaps;
+	GetResGroupCapabilities(pg_resgroupcapability_rel, groupid, &caps);
 
-	switch (limitType)
-	{
-		case RESGROUP_LIMIT_TYPE_CPU:
-			caps.cpuRateLimit = value;
-			SetCpusetEmpty(caps.cpuset, sizeof(caps.cpuset));
-			break;
-		case RESGROUP_LIMIT_TYPE_MEMORY:
-			caps.memLimit = value;
-			break;
-		case RESGROUP_LIMIT_TYPE_CONCURRENCY:
-			caps.concurrency = value;
-			break;
-		case RESGROUP_LIMIT_TYPE_MEMORY_SHARED_QUOTA:
-			caps.memSharedQuota = value;
-			break;
-		case RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO:
-			caps.memSpillRatio = value;
-			break;
-		case RESGROUP_LIMIT_TYPE_MEMORY_AUDITOR:
-			caps.memAuditor = value;
-			break;
-		case RESGROUP_LIMIT_TYPE_CPUSET:
-			strncpy(caps.cpuset, cpuset, sizeof(caps.cpuset));
-			caps.cpuRateLimit = CPU_RATE_LIMIT_DISABLED;
-			break;
-		default:
-			break;
-	}
+	capArray = (ResGroupCap *) &caps;
+	oldValue = capArray[limitType];
+	capArray[limitType] = value;
 
 	checkResgroupMemAuditor(&caps);
 
-	validateCapabilities(pg_resgroupcapability_rel, groupid, &caps, false);
+	if ((limitType == RESGROUP_LIMIT_TYPE_CPU ||
+		 limitType == RESGROUP_LIMIT_TYPE_MEMORY) &&
+		oldValue < value)
+		validateCapabilities(pg_resgroupcapability_rel, groupid, &caps, false);
 
-	/* cpuset & cpu_rate_limit can not coexist 
-	 * if cpuset is active, then cpu_rate_limit must set to CPU_RATE_LIMIT_DISABLED
-	 * if cpu_rate_limit is active, then cpuset must set to "" */
-	if (limitType == RESGROUP_LIMIT_TYPE_CPUSET)
-	{
-		updateResgroupCapabilityEntry(pg_resgroupcapability_rel,
-									  groupid, RESGROUP_LIMIT_TYPE_CPU, 
-									  CPU_RATE_LIMIT_DISABLED, "");
-		updateResgroupCapabilityEntry(pg_resgroupcapability_rel,
-									  groupid, RESGROUP_LIMIT_TYPE_CPUSET, 
-									  0, caps.cpuset);
-	}
-	else if (limitType == RESGROUP_LIMIT_TYPE_CPU)
-	{
-		updateResgroupCapabilityEntry(pg_resgroupcapability_rel,
-									  groupid, RESGROUP_LIMIT_TYPE_CPUSET,
-									  0, DefaultCpuset);
-		updateResgroupCapabilityEntry(pg_resgroupcapability_rel,
-									  groupid, RESGROUP_LIMIT_TYPE_CPU,
-									  value, "");
-	}
-	else
-	{
-		updateResgroupCapabilityEntry(pg_resgroupcapability_rel,
-									  groupid, limitType, value, "");
-	}
+	updateResgroupCapabilityEntry(pg_resgroupcapability_rel,
+								  groupid, limitType, value);
 
 	heap_close(pg_resgroupcapability_rel, NoLock);
 
@@ -537,14 +442,17 @@ AlterResourceGroup(AlterResourceGroupStmt *stmt)
 
 	if (IsResGroupActivated())
 	{
+		ResourceGroupAlterCallbackContext *callbackCtx;
+
 		/* Argument of callback function should be allocated in heap region */
-		callbackCtx = (ResourceGroupCallbackContext *)
+		callbackCtx = (ResourceGroupAlterCallbackContext *)
 			MemoryContextAlloc(TopMemoryContext, sizeof(*callbackCtx));
 		callbackCtx->groupid = groupid;
 		callbackCtx->limittype = limitType;
 		callbackCtx->caps = caps;
-		callbackCtx->oldCaps = oldCaps;
-		RegisterXactCallbackOnce(alterResgroupCallback, callbackCtx);
+		callbackCtx->memLimitGap = (limitType == RESGROUP_LIMIT_TYPE_MEMORY) ?
+			(oldValue - value) : 0;
+		RegisterXactCallbackOnce(alterResgroupCallback, (void *)callbackCtx);
 	}
 }
 
@@ -560,13 +468,20 @@ GetResGroupCapabilities(Relation rel, Oid groupId, ResGroupCaps *resgroupCaps)
 	bool isNull;
 
 	/*
+	 * By converting caps from (ResGroupCaps *) to an array of (ResGroupCap *)
+	 * we can access the individual capability via index, so we don't need
+	 * to use a switch case when setting them.
+	 */
+	ResGroupCap *capArray = (ResGroupCap *) resgroupCaps;
+
+	/*
 	 * We maintain a bit mask to track which resgroup limit capability types
 	 * have been retrieved, when mask is 0 then no limit capability is found
 	 * for the given groupId.
 	 */
 	int			mask = 0;
 
-	MemSet(resgroupCaps, 0, sizeof(ResGroupCaps));
+	MemSet(capArray, 0, sizeof(ResGroupCaps));
 
 	ScanKeyInit(&key,
 				Anum_pg_resgroupcapability_resgroupid,
@@ -600,38 +515,7 @@ GetResGroupCapabilities(Relation rel, Oid groupId, ResGroupCaps *resgroupCaps)
 		proposedDatum = heap_getattr(tuple, Anum_pg_resgroupcapability_proposed,
 									 rel->rd_att, &isNull);
 		proposed = TextDatumGetCString(proposedDatum);
-		switch (type)
-		{
-			case RESGROUP_LIMIT_TYPE_CONCURRENCY:
-				resgroupCaps->concurrency = str2Int(proposed, 
-													getResgroupOptionName(type));
-				break;
-			case RESGROUP_LIMIT_TYPE_CPU:
-				resgroupCaps->cpuRateLimit = str2Int(proposed, 
-													 getResgroupOptionName(type));
-				break;
-			case RESGROUP_LIMIT_TYPE_MEMORY:
-				resgroupCaps->memLimit = str2Int(proposed, 
-												 getResgroupOptionName(type));
-				break;
-			case RESGROUP_LIMIT_TYPE_MEMORY_SHARED_QUOTA:
-				resgroupCaps->memSharedQuota = str2Int(proposed, 
-													   getResgroupOptionName(type));
-				break;
-			case RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO:
-				resgroupCaps->memSpillRatio = str2Int(proposed,
-													  getResgroupOptionName(type));
-				break;
-			case RESGROUP_LIMIT_TYPE_MEMORY_AUDITOR:
-				resgroupCaps->memAuditor = str2Int(proposed,
-												   getResgroupOptionName(type));
-				break;
-			case RESGROUP_LIMIT_TYPE_CPUSET:
-				strncpy(resgroupCaps->cpuset, proposed, sizeof(resgroupCaps->cpuset));
-				break;
-			default:
-				break;
-		}
+		capArray[type] = str2Int(proposed, getResgroupOptionName(type));
 	}
 
 	systable_endscan(sscan);
@@ -830,8 +714,6 @@ getResgroupOptionType(const char* defname)
 		return RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO;
 	else if (strcmp(defname, "memory_auditor") == 0)
 		return RESGROUP_LIMIT_TYPE_MEMORY_AUDITOR;
-	else if (strcmp(defname, "cpuset") == 0)
-		return RESGROUP_LIMIT_TYPE_CPUSET;
 	else
 		return RESGROUP_LIMIT_TYPE_UNKNOWN;
 }
@@ -883,10 +765,6 @@ getResgroupOptionName(ResGroupLimitType type)
 			return "memory_shared_quota";
 		case RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO:
 			return "memory_spill_ratio";
-		case RESGROUP_LIMIT_TYPE_MEMORY_AUDITOR:
-			return "memory_auditor";
-		case RESGROUP_LIMIT_TYPE_CPUSET:
-			return "cpuset";
 		default:
 			return "unknown";
 	}
@@ -1014,6 +892,7 @@ parseStmtOptions(CreateResourceGroupStmt *stmt, ResGroupCaps *caps)
 {
 	ListCell *cell;
 	ResGroupCap value;
+	ResGroupCap *capArray = (ResGroupCap *)caps;
 	int mask = 0;
 
 	foreach(cell, stmt->options)
@@ -1034,67 +913,17 @@ parseStmtOptions(CreateResourceGroupStmt *stmt, ResGroupCaps *caps)
 		else
 			mask |= 1 << type;
 
-		if (type == RESGROUP_LIMIT_TYPE_CPUSET) 
-		{
-			const char *cpuset = defGetString(defel);
-			checkCpusetSyntax(cpuset);
-			strncpy(caps->cpuset, cpuset, sizeof(caps->cpuset));
-			caps->cpuRateLimit = CPU_RATE_LIMIT_DISABLED;
-		}
-		else 
-		{
-			value = getResgroupOptionValue(defel, type);
-			checkResgroupCapLimit(type, value);
+		value = getResgroupOptionValue(defel, type);
+		checkResgroupCapLimit(type, value);
 
-			switch (type)
-			{
-				case RESGROUP_LIMIT_TYPE_CONCURRENCY:
-					caps->concurrency = value;
-					break;
-				case RESGROUP_LIMIT_TYPE_CPU:
-					caps->cpuRateLimit = value;
-					SetCpusetEmpty(caps->cpuset, sizeof(caps->cpuset));
-					break;
-				case RESGROUP_LIMIT_TYPE_MEMORY:
-					caps->memLimit = value;
-					break;
-				case RESGROUP_LIMIT_TYPE_MEMORY_SHARED_QUOTA:
-					caps->memSharedQuota = value;
-					break;
-				case RESGROUP_LIMIT_TYPE_MEMORY_SPILL_RATIO:
-					caps->memSpillRatio = value;
-					break;
-				case RESGROUP_LIMIT_TYPE_MEMORY_AUDITOR:
-					caps->memAuditor = value;
-					break;
-				default:
-					break;
-			}
-		}
+		capArray[type] = value;
 	}
 
-	if ((mask & (1 << RESGROUP_LIMIT_TYPE_CPUSET)) &&
-		!IsResGroupActivated())
+	if (!(mask & (1 << RESGROUP_LIMIT_TYPE_CPU)) ||
+		!(mask & (1 << RESGROUP_LIMIT_TYPE_MEMORY)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				errmsg("must specify cpuset when resource group is activated")));
-
-	if (!(mask & (1 << RESGROUP_LIMIT_TYPE_MEMORY)))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				errmsg("must specify memory_limit")));
-
-	if ((mask & (1 << RESGROUP_LIMIT_TYPE_CPU)) &&
-		(mask & (1 << RESGROUP_LIMIT_TYPE_CPUSET)))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				errmsg("can't specify both cpu_rate_limit and cpuset")));
-
-	if (!(mask & (1 << RESGROUP_LIMIT_TYPE_CPU)) &&
-		!(mask & (1 << RESGROUP_LIMIT_TYPE_CPUSET)))
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				errmsg("must specify cpu_rate_limit or cpuset")));
+				errmsg("must specify both memory_limit and cpu_rate_limit")));
 
 	if (!(mask & (1 << RESGROUP_LIMIT_TYPE_CONCURRENCY)))
 		caps->concurrency = RESGROUP_DEFAULT_CONCURRENCY;
@@ -1120,13 +949,15 @@ parseStmtOptions(CreateResourceGroupStmt *stmt, ResGroupCaps *caps)
 static void
 createResgroupCallback(XactEvent event, void *arg)
 {
-	ResourceGroupCallbackContext *callbackCtx = arg;
+	Oid groupId;
 
-	if (event != XACT_EVENT_COMMIT)
-	{
-		ResGroupCreateOnAbort(callbackCtx);
-	}
-	pfree(callbackCtx);
+	groupId = *(Oid *)arg;
+	pfree(arg);
+
+	if (event == XACT_EVENT_COMMIT)
+		return;
+
+	ResGroupCreateOnAbort(groupId);
 }
 
 /*
@@ -1138,10 +969,12 @@ createResgroupCallback(XactEvent event, void *arg)
 static void
 dropResgroupCallback(XactEvent event, void *arg)
 {
-	ResourceGroupCallbackContext *callbackCtx = arg;
+	Oid groupId;
 
-	ResGroupDropFinish(callbackCtx, event == XACT_EVENT_COMMIT);
-	pfree(callbackCtx);
+	groupId = *(Oid *)arg;
+	pfree(arg);
+
+	ResGroupDropFinish(groupId, event == XACT_EVENT_COMMIT);
 }
 
 /*
@@ -1153,12 +986,14 @@ dropResgroupCallback(XactEvent event, void *arg)
 static void
 alterResgroupCallback(XactEvent event, void *arg)
 {
-	ResourceGroupCallbackContext *callbackCtx = arg;
+	ResourceGroupAlterCallbackContext *ctx =
+		(ResourceGroupAlterCallbackContext *) arg;
 
 	if (event == XACT_EVENT_COMMIT)
-		ResGroupAlterOnCommit(callbackCtx);
+		ResGroupAlterOnCommit(ctx->groupid, ctx->limittype, &ctx->caps,
+				ctx->memLimitGap);
 
-	pfree(callbackCtx);
+	pfree(arg);
 }
 
 /*
@@ -1203,9 +1038,6 @@ insertResgroupCapabilities(Relation rel, Oid groupId, ResGroupCaps *caps)
 	sprintf(value, "%d", caps->memAuditor);
 	insertResgroupCapabilityEntry(rel, groupId,
 								  RESGROUP_LIMIT_TYPE_MEMORY_AUDITOR, value);
-
-	insertResgroupCapabilityEntry(rel, groupId,
-								  RESGROUP_LIMIT_TYPE_CPUSET, caps->cpuset);
 }
 
 /*
@@ -1217,8 +1049,7 @@ static void
 updateResgroupCapabilityEntry(Relation rel,
 							  Oid groupId,
 							  ResGroupLimitType limitType,
-							  ResGroupCap value,
-							  const char *strValue)
+							  ResGroupCap value)
 {
 	HeapTuple	oldTuple;
 	HeapTuple	newTuple;
@@ -1227,7 +1058,7 @@ updateResgroupCapabilityEntry(Relation rel,
 	Datum		values[Natts_pg_resgroupcapability];
 	bool		isnull[Natts_pg_resgroupcapability];
 	bool		repl[Natts_pg_resgroupcapability];
-	char		stringBuffer[MaxCpuSetLength];
+	char		valueStr[16];
 
 	ScanKeyInit(&scankey[0],
 				Anum_pg_resgroupcapability_resgroupid,
@@ -1253,20 +1084,13 @@ updateResgroupCapabilityEntry(Relation rel,
 				 errmsg("capabilities missing for resource group %d type %d",
 						groupId, limitType)));
 
-	if (limitType == RESGROUP_LIMIT_TYPE_CPUSET)
-	{
-		strncpy(stringBuffer, strValue, sizeof(stringBuffer));
-	}
-	else
-	{
-		snprintf(stringBuffer, sizeof(stringBuffer), "%d", value);
-	}
+	snprintf(valueStr, sizeof(valueStr), "%d", value);
 
-	values[Anum_pg_resgroupcapability_value - 1] = CStringGetTextDatum(stringBuffer);
+	values[Anum_pg_resgroupcapability_value - 1] = CStringGetTextDatum(valueStr);
 	isnull[Anum_pg_resgroupcapability_value - 1] = false;
 	repl[Anum_pg_resgroupcapability_value - 1]  = true;
 
-	values[Anum_pg_resgroupcapability_proposed - 1] = CStringGetTextDatum(stringBuffer);
+	values[Anum_pg_resgroupcapability_proposed - 1] = CStringGetTextDatum(valueStr);
 	isnull[Anum_pg_resgroupcapability_proposed - 1] = false;
 	repl[Anum_pg_resgroupcapability_proposed - 1]  = true;
 
@@ -1301,42 +1125,6 @@ validateCapabilities(Relation rel,
 	SysScanDesc sscan;
 	int totalCpu = caps->cpuRateLimit;
 	int totalMem = caps->memLimit;
-	char cpusetAll[MaxCpuSetLength] = {0};
-	Bitmapset *bmsUnused = NULL;
-	Bitmapset *bmsCurrent = NULL;
-
-	if (!gp_resource_group_enable_cgroup_cpuset &&
-		!CpusetIsEmpty(caps->cpuset))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("cpuset is disabled for cpuset/gpdb does not exist")));
-	}
-
-	/*
-	 * initialize the variables only when resource group is activated
-	 */
-	if (IsResGroupActivated() &&
-		gp_resource_group_enable_cgroup_cpuset)
-	{
-		/* Get all available cores */
-		ResGroupOps_GetCpuSet(RESGROUP_ROOT_ID,
-							  cpusetAll,
-							  MaxCpuSetLength);
-		bmsUnused = CpusetToBitset(cpusetAll, MaxCpuSetLength);
-		/* Check whether the cores in this group are available */
-		if (!CpusetIsEmpty(caps->cpuset))
-		{
-			bmsCurrent = CpusetToBitset(caps->cpuset, MaxCpuSetLength);
-			if (!bms_is_subset(bmsCurrent, bmsUnused))
-			{
-				ereport(ERROR,
-						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						errmsg("some cores of cpuset are unavailable")));
-			}
-			bmsUnused = bms_del_members(bmsUnused, bmsCurrent);
-		}
-	}
 
 	sscan = systable_beginscan(rel, ResGroupCapabilityResgroupidIndexId,
 							   true, SnapshotNow, 0, NULL);
@@ -1372,62 +1160,26 @@ validateCapabilities(Relation rel,
 
 		proposedDatum = heap_getattr(tuple, Anum_pg_resgroupcapability_proposed,
 									 rel->rd_att, &isNull);
+		proposedStr = TextDatumGetCString(proposedDatum);
+		proposed = str2Int(proposedStr, getResgroupOptionName(reslimittype));
 
 		if (reslimittype == RESGROUP_LIMIT_TYPE_CPU)
 		{
-			proposedStr = TextDatumGetCString(proposedDatum);
-			proposed = str2Int(proposedStr, getResgroupOptionName(reslimittype));
-			if (proposed != CPU_RATE_LIMIT_DISABLED)
-			{
-				totalCpu += proposed;
-				if (totalCpu > RESGROUP_MAX_CPU_RATE_LIMIT)
-					ereport(ERROR,
-							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							errmsg("total cpu_rate_limit exceeded the limit of %d",
-								   RESGROUP_MAX_CPU_RATE_LIMIT)));
-			}
+			totalCpu += proposed;
+			if (totalCpu > RESGROUP_MAX_CPU_RATE_LIMIT)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("total cpu_rate_limit exceeded the limit of %d",
+							   RESGROUP_MAX_CPU_RATE_LIMIT)));
 		}
 		else if (reslimittype == RESGROUP_LIMIT_TYPE_MEMORY)
 		{
-			proposedStr = TextDatumGetCString(proposedDatum);
-			proposed = str2Int(proposedStr, getResgroupOptionName(reslimittype));
 			totalMem += proposed;
 			if (totalMem > RESGROUP_MAX_MEMORY_LIMIT)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("total memory_limit exceeded the limit of %d",
 							   RESGROUP_MAX_MEMORY_LIMIT)));
-		}
-		else if (reslimittype == RESGROUP_LIMIT_TYPE_CPUSET)
-		{
-			/*
-			 * do the check when resource group is activated
-			 */
-			if (IsResGroupActivated())
-			{
-				proposedStr = TextDatumGetCString(proposedDatum);
-				if (!CpusetIsEmpty(proposedStr))
-				{
-					if (gp_resource_group_enable_cgroup_cpuset)
-					{
-						bmsCurrent = CpusetToBitset(proposedStr, MaxCpuSetLength);
-						if (!bms_is_subset(bmsCurrent, bmsUnused))
-						{
-							ereport(ERROR,
-									(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-									errmsg("some cores of cpuset are unavailable")));
-						}
-						bmsUnused = bms_del_members(bmsUnused, bmsCurrent);
-					}
-					else
-					{
-						ereport(ERROR,
-								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-								 errmsg("cpuset is disabled for cpuset/gpdb "
-										"does not exist")));
-					}
-				}
-			}
 		}
 	}
 
@@ -1564,29 +1316,4 @@ getResGroupMemAuditor(char *name)
 	}
 
 	return RESGROUP_INVALID_MEM_AUDITOR;
-}
-
-/*
- * check whether the cpuset value is syntactically right
- */
-static bool
-checkCpusetSyntax(const char *cpuset)
-{
-	if (strlen(cpuset) >= MaxCpuSetLength)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("the length of cpuset reached the upper limit %d",
-						MaxCpuSetLength)));
-		return false;
-	}
-	if (!CpusetToBitset(cpuset,
-						 strlen(cpuset)))
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_SYNTAX_ERROR),
-				 errmsg("cpuset invalid")));
-		return false;
-	}
-	return true;
 }
