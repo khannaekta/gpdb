@@ -105,6 +105,8 @@ float4 getBucketSizes(const HeapTuple *heaptupleStats, const float4 *relTuples, 
 /* A few variables that don't seem worth passing around as parameters */
 static int	elevel = -1;
 
+#define DEFAULT_COLLATION_OID	100
+
 float4
 get_rel_reltuples(Oid relid)
 {
@@ -563,7 +565,7 @@ initTypInfo(TypInfo *typInfo, Oid typOid)
 {
 	typInfo->typOid = typOid;
 	get_typlenbyval(typOid, &typInfo->typlen, &typInfo->typbyval);
-	get_sort_group_operators(typOid, false, true, false, &typInfo->ltFuncOp, &typInfo->eqFuncOp, NULL);
+	get_sort_group_operators(typOid, false, true, false, &typInfo->ltFuncOp, &typInfo->eqFuncOp, NULL, NULL);
 	typInfo->eqFuncOp = get_opcode(typInfo->eqFuncOp);
 	typInfo->ltFuncOp = get_opcode(typInfo->ltFuncOp);
 }
@@ -823,7 +825,7 @@ datumCompare(Datum d1, Datum d2, Oid opFuncOid)
 {
 	FmgrInfo	ltproc;
 	fmgr_info(opFuncOid, &ltproc);
-	return DatumGetBool(FunctionCall2(&ltproc, d1, d2));
+	return DatumGetBool(FunctionCall2Coll(&ltproc, DEFAULT_COLLATION_OID, d1, d2));
 }
 
 /*

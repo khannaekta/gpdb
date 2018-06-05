@@ -3713,7 +3713,7 @@ merge_leaf_stats(VacAttrStatsP stats,
 
 	/* Look for default "<" and "=" operators for column's type */
 	get_sort_group_operators(stats->attr->atttypid, false, false, false, &ltopr,
-							 &eqopr, NULL);
+							 &eqopr, NULL, NULL);
 
 	foreach (lc, oid_list)
 	{
