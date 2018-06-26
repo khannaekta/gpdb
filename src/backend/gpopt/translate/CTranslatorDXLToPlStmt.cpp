@@ -784,7 +784,54 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		CDXLNode *pdxlnIndexCond = (*pdxlnIndexCondList)[ul];
 
 		Expr *pexprOrigIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
+		List *qualargs = ((OpExpr *) pexprOrigIndexCond)->args;
+		List *finalquals = NIL;
+		ListCell *lcqualargs;
+		Param *pparam = NULL;
+		foreach(lcqualargs, qualargs)
+		{
+			Var *varfirst = (Var *) lfirst(lcqualargs);
+			if (varfirst->varno == OUTER)
+			{
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = 0;
+				pparam->paramtype = varfirst->vartype;
+				pparam->paramtypmod = varfirst->vartypmod;
+				pparam->paramcollid = varfirst->varcollid;
+				pparam->location = varfirst->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				continue;
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)varfirst);
+		}
+		*qualargs = *finalquals;
+		
+		
 		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
+		List *qualargs1 = ((OpExpr *) pexprIndexCond)->args;
+		List *finalquals1 = NIL;
+		ListCell *lcqualargs1;
+		Param *pparam1 = NULL;
+		foreach(lcqualargs1, qualargs1)
+		{
+			Var *varfirst = (Var *) lfirst(lcqualargs1);
+			if (varfirst->varno == OUTER)
+			{
+				pparam1 = MakeNode(Param);
+				pparam1->paramkind = PARAM_EXEC;
+				pparam1->paramid = 0;
+				pparam1->paramtype = varfirst->vartype;
+				pparam1->paramtypmod = varfirst->vartypmod;
+				pparam1->paramcollid = varfirst->varcollid;
+				pparam1->location = varfirst->location;
+				finalquals1 = gpdb::PlAppendElement(finalquals1, (void *) pparam1);
+				continue;
+			}
+			finalquals1 = gpdb::PlAppendElement(finalquals1, (void *)varfirst);
+		}
+		*qualargs1 = *finalquals1;
+		
 		GPOS_ASSERT((IsA(pexprIndexCond, OpExpr) || IsA(pexprIndexCond, ScalarArrayOpExpr))
 				&& "expected OpExpr or ScalarArrayOpExpr in index qual");
 
@@ -1554,6 +1601,22 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 	// cleanup
 	pdrgpdxltrctxWithSiblings->Release();
 	pdrgpdxltrctx->Release();
+	List *nestparams = NIL;
+	NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
+	nestloopparam->paramno = 0;
+	Var *varnest = MakeNode(Var);
+	varnest->varno = 65001;
+	varnest->varattno = 2;
+	varnest->vartype = 23;
+	varnest->vartypmod = -1;
+	varnest->varcollid = 0;
+	varnest->varlevelsup = 0;
+	varnest->varnoold = 1;
+	varnest->varoattno = 2;
+	varnest->location = -1;
+	nestloopparam->paramval = varnest;
+	
+	pnlj->nestParams = gpdb::PlAppendElement(nestparams, (void *) nestloopparam);
 
 	return  (Plan *) pnlj;
 }
