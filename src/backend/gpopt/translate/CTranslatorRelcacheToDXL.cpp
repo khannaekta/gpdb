@@ -1113,7 +1113,7 @@ CTranslatorRelcacheToDXL::Pmdindex
 	
 		emdindt = IMDIndex::EmdindBtree;
 		IMDRelation::Erelstoragetype erelstorage = pmdrel->Erelstorage();
-		if (BITMAP_AM_OID == relIndex->rd_rel->relam || IMDRelation::ErelstorageAppendOnlyRows == erelstorage || IMDRelation::ErelstorageAppendOnlyCols == erelstorage)
+		if (BITMAP_AM_OID == relIndex->rd_rel->relam)
 		{
 			emdindt = IMDIndex::EmdindBitmap;
 			pmdidItemType = GPOS_NEW(pmp) CMDIdGPDB(GPDB_ANY);
