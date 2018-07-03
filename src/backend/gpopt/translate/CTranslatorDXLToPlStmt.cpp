@@ -459,6 +459,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 				nestloopparam->paramval = var;
 
 				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
+				m_pctxdxltoplstmt->UlNextParamId();
 
 				paramno++;
 				continue;
