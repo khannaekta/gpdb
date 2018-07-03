@@ -499,6 +499,47 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 		}
 		*qualargs = *finalquals;
 	}
+
+	quals = ((Plan *)planRight)->qual;
+	q = NULL;
+	foreach(q, quals)
+	{
+		List *qualargs = ((OpExpr *) lfirst(q))->args;
+		List *finalquals = NIL;
+		Param *pparam = NULL;
+		ListCell *v = NULL;
+		finalquals = NIL;
+		pparam = NULL;
+
+		ForEach (v, qualargs)
+		{
+			Var *var = (Var*) lfirst(v);
+			if(var->varno == OUTER)
+			{
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = 0;
+				pparam->paramtype = var->vartype;
+				pparam->paramtypmod = var->vartypmod;
+				pparam->paramcollid = var->varcollid;
+				pparam->location = var->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
+
+				nestloopparam->paramno = paramno;
+				nestloopparam->paramval = var;
+
+				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
+				m_pctxdxltoplstmt->UlNextParamId();
+
+				paramno++;
+				continue;
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+		}
+		*qualargs = *finalquals;
+	}
+
 }
 
 
