@@ -414,6 +414,93 @@ CTranslatorDXLToPlStmt::SetParamIds(Plan* pplan)
 
 //---------------------------------------------------------------------------
 //	@function:
+//		CTranslatorDXLToPlStmt::SetNLParams
+//
+//
+//---------------------------------------------------------------------------
+void
+CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
+{
+//	List *plParams = gpdb::PlExtractNodesPlan(pplan, T_Param, true);
+
+		int paramno = 0;
+
+	if(! IsA(pplanRight, IndexScan))
+		return;
+
+	IndexScan* planRight = (IndexScan *) pplanRight;
+	List *quals = planRight->indexqual;
+	ListCell *q = NULL;
+	foreach(q, quals)
+	{
+		List *qualargs = ((OpExpr *) q)->args;
+		List *finalquals = NIL;
+		Param *pparam = NULL;
+		ListCell *v = NULL;
+
+
+		ForEach (v, qualargs)
+		{
+
+			Var *var = (Var*) lfirst(v);
+			if(var->varno == OUTER)
+			{
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = 0;
+				pparam->paramtype = var->vartype;
+				pparam->paramtypmod = var->vartypmod;
+				pparam->paramcollid = var->varcollid;
+				pparam->location = var->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
+
+				nestloopparam->paramno = paramno;
+				nestloopparam->paramval = var;
+
+				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
+
+				paramno++;
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+		}
+		*qualargs = *finalquals;
+	}
+
+	quals = planRight->indexqualorig;
+	q = NULL;
+	foreach(q, quals)
+	{
+		List *qualargs = ((OpExpr *) q)->args;
+		List *finalquals = NIL;
+		Param *pparam = NULL;
+		ListCell *v = NULL;
+		finalquals = NIL;
+		pparam = NULL;
+
+		ForEach (v, qualargs)
+		{
+			Var *var = (Var*) lfirst(v);
+			if(var->varno == OUTER)
+			{
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = 0;
+				pparam->paramtype = var->vartype;
+				pparam->paramtypmod = var->vartypmod;
+				pparam->paramcollid = var->varcollid;
+				pparam->location = var->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+		}
+		*qualargs = *finalquals;
+	}
+}
+
+
+//---------------------------------------------------------------------------
+//	@function:
 //		CTranslatorDXLToPlStmt::PtsFromDXLTblScan
 //
 //	@doc:
@@ -685,6 +772,7 @@ CTranslatorDXLToPlStmt::PisFromDXLIndexScan
 	List *plIndexOrigConditions = NIL;
 	List *plIndexStratgey = NIL;
 	List *plIndexSubtype = NIL;
+	List *nestloop_params = NIL;
 
 	TranslateIndexConditions
 		(
@@ -699,7 +787,8 @@ CTranslatorDXLToPlStmt::PisFromDXLIndexScan
 		&plIndexConditions, 
 		&plIndexOrigConditions, 
 		&plIndexStratgey, 
-		&plIndexSubtype
+		&plIndexSubtype,
+		&nestloop_params
 		);
 
 	pis->indexqual = plIndexConditions;
@@ -709,6 +798,10 @@ CTranslatorDXLToPlStmt::PisFromDXLIndexScan
 	 * available or needed in IndexScan. Ignore them.
 	 */
 	SetParamIds(pplan);
+//	if(nestloop_params)
+//	{
+//		SetNLParams(pplan, nestloop_params);
+//	}
 
 	return (Plan *) pis;
 }
@@ -769,7 +862,8 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 	List **pplIndexConditions,
 	List **pplIndexOrigConditions,
 	List **pplIndexStratgey,
-	List **pplIndexSubtype
+	List **pplIndexSubtype,
+	List **nestloopvars
 	)
 {
 	// array of index qual info
@@ -784,54 +878,7 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		CDXLNode *pdxlnIndexCond = (*pdxlnIndexCondList)[ul];
 
 		Expr *pexprOrigIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
-		List *qualargs = ((OpExpr *) pexprOrigIndexCond)->args;
-		List *finalquals = NIL;
-		ListCell *lcqualargs;
-		Param *pparam = NULL;
-		foreach(lcqualargs, qualargs)
-		{
-			Var *varfirst = (Var *) lfirst(lcqualargs);
-			if (varfirst->varno == OUTER)
-			{
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = 0;
-				pparam->paramtype = varfirst->vartype;
-				pparam->paramtypmod = varfirst->vartypmod;
-				pparam->paramcollid = varfirst->varcollid;
-				pparam->location = varfirst->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)varfirst);
-		}
-		*qualargs = *finalquals;
-		
-		
 		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
-		List *qualargs1 = ((OpExpr *) pexprIndexCond)->args;
-		List *finalquals1 = NIL;
-		ListCell *lcqualargs1;
-		Param *pparam1 = NULL;
-		foreach(lcqualargs1, qualargs1)
-		{
-			Var *varfirst = (Var *) lfirst(lcqualargs1);
-			if (varfirst->varno == OUTER)
-			{
-				pparam1 = MakeNode(Param);
-				pparam1->paramkind = PARAM_EXEC;
-				pparam1->paramid = 0;
-				pparam1->paramtype = varfirst->vartype;
-				pparam1->paramtypmod = varfirst->vartypmod;
-				pparam1->paramcollid = varfirst->varcollid;
-				pparam1->location = varfirst->location;
-				finalquals1 = gpdb::PlAppendElement(finalquals1, (void *) pparam1);
-				continue;
-			}
-			finalquals1 = gpdb::PlAppendElement(finalquals1, (void *)varfirst);
-		}
-		*qualargs1 = *finalquals1;
-		
 		GPOS_ASSERT((IsA(pexprIndexCond, OpExpr) || IsA(pexprIndexCond, ScalarArrayOpExpr))
 				&& "expected OpExpr or ScalarArrayOpExpr in index qual");
 
@@ -1593,30 +1640,18 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 					pdxltrctxOut
 					);
 
+	SetNLParams(pplan, pplanRight);
+
 	pplan->lefttree = pplanLeft;
 	pplan->righttree = pplanRight;
 	pplan->nMotionNodes = pplanLeft->nMotionNodes + pplanRight->nMotionNodes;
+
+
 	SetParamIds(pplan);
 
 	// cleanup
 	pdrgpdxltrctxWithSiblings->Release();
 	pdrgpdxltrctx->Release();
-	List *nestparams = NIL;
-	NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
-	nestloopparam->paramno = 0;
-	Var *varnest = MakeNode(Var);
-	varnest->varno = 65001;
-	varnest->varattno = 2;
-	varnest->vartype = 23;
-	varnest->vartypmod = -1;
-	varnest->varcollid = 0;
-	varnest->varlevelsup = 0;
-	varnest->varnoold = 1;
-	varnest->varoattno = 2;
-	varnest->location = -1;
-	nestloopparam->paramval = varnest;
-	
-	pnlj->nestParams = gpdb::PlAppendElement(nestparams, (void *) nestloopparam);
 
 	return  (Plan *) pnlj;
 }
@@ -3708,6 +3743,7 @@ CTranslatorDXLToPlStmt::PplanDIS
 	List *plIndexOrigConditions = NIL;
 	List *plIndexStratgey = NIL;
 	List *plIndexSubtype = NIL;
+	List *nestloop_vars = NIL;
 
 	TranslateIndexConditions
 		(
@@ -3722,7 +3758,8 @@ CTranslatorDXLToPlStmt::PplanDIS
 		&plIndexConditions, 
 		&plIndexOrigConditions, 
 		&plIndexStratgey, 
-		&plIndexSubtype
+		&plIndexSubtype,
+		&nestloop_vars
 		);
 
 
@@ -3733,6 +3770,8 @@ CTranslatorDXLToPlStmt::PplanDIS
 	 * available or needed in IndexScan. Ignore them.
 	 */
 	SetParamIds(pplan);
+
+	//SetNLParams(pplan, nestloop_vars);
 
 	return (Plan *) pdis;
 }
@@ -5571,7 +5610,8 @@ CTranslatorDXLToPlStmt::PplanBitmapIndexProbe
 		&plIndexConditions,
 		&plIndexOrigConditions,
 		&plIndexStratgey,
-		&plIndexSubtype
+		&plIndexSubtype,
+		NULL
 		);
 
 	pbis->indexqual = plIndexConditions;

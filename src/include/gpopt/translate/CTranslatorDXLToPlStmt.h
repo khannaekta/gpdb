@@ -192,6 +192,8 @@ namespace gpdxl
 			// Set the bitmapset of a plan to the list of param_ids defined by the plan
 			void SetParamIds(Plan *);
 
+			void SetNLParams(Plan *, Plan*);
+
 			// Set the qDispSliceId in the subplans defining an initplan
 			void SetInitPlanSliceInformation(SubPlan *);
 
@@ -643,7 +645,8 @@ namespace gpdxl
 				List **pplIndexConditions,
 				List **pplIndexOrigConditions,
 				List **pplIndexStratgey,
-				List **pplIndexSubtype
+				List **pplIndexSubtype,
+				List **nestloop_vars
 				);
 			
 			// translate the index filters
