@@ -423,7 +423,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 {
 //	List *plParams = gpdb::PlExtractNodesPlan(pplan, T_Param, true);
 
-		int paramno = 0;
+	int paramno = 0;
 
 	if(! IsA(pplanRight, IndexScan))
 		return;
@@ -447,7 +447,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 			{
 				pparam = MakeNode(Param);
 				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = 0;
+				pparam->paramid = paramno;
 				pparam->paramtype = var->vartype;
 				pparam->paramtypmod = var->vartypmod;
 				pparam->paramcollid = var->varcollid;
@@ -469,6 +469,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 		*qualargs = *finalquals;
 	}
 
+	paramno = 0;
 	quals = planRight->indexqualorig;
 	q = NULL;
 	foreach(q, quals)
@@ -487,18 +488,20 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 			{
 				pparam = MakeNode(Param);
 				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = 0;
+				pparam->paramid = paramno;
 				pparam->paramtype = var->vartype;
 				pparam->paramtypmod = var->vartypmod;
 				pparam->paramcollid = var->varcollid;
 				pparam->location = var->location;
 				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				paramno++;
 				continue;
 			}
 			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
 		}
 		*qualargs = *finalquals;
 	}
+
 
 	quals = ((Plan *)planRight)->qual;
 	q = NULL;
@@ -518,7 +521,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 			{
 				pparam = MakeNode(Param);
 				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = 0;
+				pparam->paramid = paramno;
 				pparam->paramtype = var->vartype;
 				pparam->paramtypmod = var->vartypmod;
 				pparam->paramcollid = var->varcollid;
