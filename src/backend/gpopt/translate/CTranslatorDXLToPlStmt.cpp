@@ -433,7 +433,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 	ListCell *q = NULL;
 	foreach(q, quals)
 	{
-		List *qualargs = ((OpExpr *) q)->args;
+		List *qualargs = ((OpExpr *) lfirst(q))->args;
 		List *finalquals = NIL;
 		Param *pparam = NULL;
 		ListCell *v = NULL;
@@ -461,6 +461,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
 
 				paramno++;
+				continue;
 			}
 			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
 		}
@@ -471,7 +472,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 	q = NULL;
 	foreach(q, quals)
 	{
-		List *qualargs = ((OpExpr *) q)->args;
+		List *qualargs = ((OpExpr *) lfirst(q))->args;
 		List *finalquals = NIL;
 		Param *pparam = NULL;
 		ListCell *v = NULL;
@@ -491,6 +492,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 				pparam->paramcollid = var->varcollid;
 				pparam->location = var->location;
 				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				continue;
 			}
 			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
 		}
