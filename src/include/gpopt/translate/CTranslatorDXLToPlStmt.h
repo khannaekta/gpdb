@@ -146,7 +146,10 @@ namespace gpdxl
 			// list of result relations range table indexes for DML statements,
 			// or NULL for select queries
 			List *m_plResultRelations;
-			
+
+			// list of outer params at each NLJ node
+			List *m_curOuterParams;
+
 			// external scan counter
 			ULONG m_ulExternalScanCounter;
 			

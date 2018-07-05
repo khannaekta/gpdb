@@ -83,7 +83,8 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt
 	m_plResultRelations(NULL),
 	m_ulExternalScanCounter(0),
 	m_ulSegments(ulSegments),
-	m_ulPartitionSelectorCounter(0)
+	m_ulPartitionSelectorCounter(0),
+    m_curOuterParams(NULL)
 {
 	m_pdxlsctranslator = GPOS_NEW(m_pmp) CTranslatorDXLToScalar(m_pmp, m_pmda, m_ulSegments);
 	InitTranslators();
@@ -423,14 +424,13 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 {
 //	List *plParams = gpdb::PlExtractNodesPlan(pplan, T_Param, true);
 
-	int paramno = 0;
 
+/*
 	if(! IsA(pplanRight, IndexScan))
 		return;
 
 	IndexScan* planRight = (IndexScan *) pplanRight;
-	List *quals = planRight->indexqual;
-	ListCell *q = NULL;
+
 	foreach(q, quals)
 	{
 		List *qualargs = ((OpExpr *) lfirst(q))->args;
@@ -501,9 +501,21 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 		}
 		*qualargs = *finalquals;
 	}
+ */
 
+//	List *quals = ((IndexScan *)pplanRight)->indexqual;
+	ListCell *q = NULL;
+	ListCell *lc;
 
-	quals = ((Plan *)planRight)->qual;
+	foreach(lc, m_curOuterParams)
+	{
+		NestLoopParam *param = (NestLoopParam *) lfirst(lc);
+		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
+	}
+
+	int paramno = m_pctxdxltoplstmt->UlCurrentParamId();
+
+	List *quals = ((Plan *)pplanRight)->qual;
 	q = NULL;
 	foreach(q, quals)
 	{
@@ -543,6 +555,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 		*qualargs = *finalquals;
 	}
 
+	gpdb::FreeList(m_curOuterParams);
 }
 
 
@@ -925,7 +938,68 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		CDXLNode *pdxlnIndexCond = (*pdxlnIndexCondList)[ul];
 
 		Expr *pexprOrigIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
+		List* qualargs = ((OpExpr *)pexprOrigIndexCond)->args;
+		List *finalquals = NIL;
+		ListCell *v;
+		int paramno = 0;
+		foreach(v, qualargs)
+		{
+			Var *var = (Var*) lfirst(v);
+			if(var->varno == OUTER)
+			{
+				Param *pparam = NULL;
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = paramno;
+				pparam->paramtype = var->vartype;
+				pparam->paramtypmod = var->vartypmod;
+				pparam->paramcollid = var->varcollid;
+				pparam->location = var->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
+
+				nestloopparam->paramno = m_pctxdxltoplstmt->UlCurrentParamId();
+				nestloopparam->paramval = var;
+
+				m_curOuterParams = gpdb::PlAppendElement(m_curOuterParams, (void *) nestloopparam);
+				m_pctxdxltoplstmt->UlNextParamId();
+				paramno++;
+
+				continue;
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+		}
+		*qualargs = *finalquals;
+
+
 		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
+
+		finalquals = NIL;
+		paramno = 0;
+		qualargs = ((OpExpr *)pexprIndexCond)->args;
+		v = NULL;
+		foreach(v, qualargs)
+		{
+			Var *var = (Var*) lfirst(v);
+			if(var->varno == OUTER)
+			{
+				Param *pparam = NULL;
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = paramno;
+				pparam->paramtype = var->vartype;
+				pparam->paramtypmod = var->vartypmod;
+				pparam->paramcollid = var->varcollid;
+				pparam->location = var->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				paramno++;
+				continue;
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+		}
+		*qualargs = *finalquals;
+
+
 		GPOS_ASSERT((IsA(pexprIndexCond, OpExpr) || IsA(pexprIndexCond, ScalarArrayOpExpr))
 				&& "expected OpExpr or ScalarArrayOpExpr in index qual");
 
@@ -5438,6 +5512,7 @@ CTranslatorDXLToPlStmt::PplanBitmapTableScan
 		&plQuals,
 		pdxltrctxOut
 		);
+
 	pplan->qual = plQuals;
 
 	pdbts->bitmapqualorig = PlQualFromFilter
@@ -5447,6 +5522,35 @@ CTranslatorDXLToPlStmt::PplanBitmapTableScan
 							pdrgpdxltrctxPrevSiblings,
 							pdxltrctxOut
 							);
+	ListCell *q;
+	foreach(q, pdbts->bitmapqualorig)
+	{
+		List* qualargs = ((OpExpr *) lfirst(q))->args;
+		List *finalquals = NIL;
+		ListCell *v;
+		int paramno = 0;
+		foreach(v, qualargs)
+		{
+			Var *var = (Var*) lfirst(v);
+			if(var->varno == OUTER)
+			{
+				Param *pparam = NULL;
+				pparam = MakeNode(Param);
+				pparam->paramkind = PARAM_EXEC;
+				pparam->paramid = paramno;
+				pparam->paramtype = var->vartype;
+				pparam->paramtypmod = var->vartypmod;
+				pparam->paramcollid = var->varcollid;
+				pparam->location = var->location;
+				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+				paramno++;
+
+				continue;
+			}
+			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+		}
+		*qualargs = *finalquals;
+	}
 
 	pdbts->scan.plan.lefttree = PplanBitmapAccessPath
 								(
