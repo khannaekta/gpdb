@@ -147,9 +147,6 @@ namespace gpdxl
 			// or NULL for select queries
 			List *m_plResultRelations;
 
-			// list of outer params at each NLJ node
-			List *m_curOuterParams;
-
 			// external scan counter
 			ULONG m_ulExternalScanCounter;
 			
@@ -158,6 +155,9 @@ namespace gpdxl
 
 			// partition selector counter
 			ULONG m_ulPartitionSelectorCounter;
+
+			// list of outer params at each NLJ node
+			List *m_curOuterParams;
 
 			// private copy ctor
 			CTranslatorDXLToPlStmt(const CTranslatorDXLToPlStmt&);

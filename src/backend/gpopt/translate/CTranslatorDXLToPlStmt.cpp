@@ -80,11 +80,11 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt
 	m_pctxdxltoplstmt(pctxdxltoplstmt),
 	m_cmdtype(CMD_SELECT),
 	m_fTargetTableDistributed(false),
-	m_plResultRelations(NULL),
+	m_plResultRelations(NIL),
 	m_ulExternalScanCounter(0),
 	m_ulSegments(ulSegments),
 	m_ulPartitionSelectorCounter(0),
-    m_curOuterParams(NULL)
+	m_curOuterParams(NIL)
 {
 	m_pdxlsctranslator = GPOS_NEW(m_pmp) CTranslatorDXLToScalar(m_pmp, m_pmda, m_ulSegments);
 	InitTranslators();
@@ -1762,7 +1762,8 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 					pdxltrctxOut
 					);
 
-	SetNLParams(pplan, pplanRight);
+	if (pdxlnlj->FIndexNLJ())
+		SetNLParams(pplan, pplanRight);
 
 	pplan->lefttree = pplanLeft;
 	pplan->righttree = pplanRight;
