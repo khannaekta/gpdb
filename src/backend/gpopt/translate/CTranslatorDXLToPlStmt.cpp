@@ -511,9 +511,10 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 	{
 		NestLoopParam *param = (NestLoopParam *) lfirst(lc);
 		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
+		m_pctxdxltoplstmt->UlNextParamId();
 	}
 
-	int paramno = m_pctxdxltoplstmt->UlCurrentParamId();
+	int paramno = gpdb::UlListLength(m_curOuterParams);
 
 	List *quals = ((Plan *)pplanRight)->qual;
 	q = NULL;
@@ -545,7 +546,6 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 				nestloopparam->paramval = var;
 
 				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
-				m_pctxdxltoplstmt->UlNextParamId();
 
 				paramno++;
 				continue;
@@ -556,6 +556,7 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 	}
 
 	gpdb::FreeList(m_curOuterParams);
+	m_curOuterParams = NIL;
 }
 
 
@@ -958,11 +959,10 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
 				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
 
-				nestloopparam->paramno = m_pctxdxltoplstmt->UlCurrentParamId();
+				nestloopparam->paramno = paramno;
 				nestloopparam->paramval = var;
 
 				m_curOuterParams = gpdb::PlAppendElement(m_curOuterParams, (void *) nestloopparam);
-				m_pctxdxltoplstmt->UlNextParamId();
 				paramno++;
 
 				continue;
