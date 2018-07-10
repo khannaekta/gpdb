@@ -38,6 +38,7 @@ CDXLTranslateContext::CDXLTranslateContext
 	// initialize hash table
 	m_phmulte = GPOS_NEW(m_pmp) HMUlTe(m_pmp);
 	m_phmcolparam = GPOS_NEW(m_pmp) HMColParam(m_pmp);
+	m_colnljparam = GPOS_NEW(m_pmp) HMColParam(m_pmp);
 }
 
 //---------------------------------------------------------------------------
@@ -52,7 +53,8 @@ CDXLTranslateContext::CDXLTranslateContext
 	(
 	IMemoryPool *pmp,
 	BOOL fChildAggNode,
-	HMColParam *phmOriginal
+	HMColParam *phmOriginal,
+    HMColParam *phmOriginalNLJ = NULL
 	)
 	:
 	m_pmp(pmp),
@@ -60,7 +62,9 @@ CDXLTranslateContext::CDXLTranslateContext
 {
 	m_phmulte = GPOS_NEW(m_pmp) HMUlTe(m_pmp);
 	m_phmcolparam = GPOS_NEW(m_pmp) HMColParam(m_pmp);
+	m_colnljparam = GPOS_NEW(m_pmp) HMColParam(m_pmp);
 	CopyParamHashmap(phmOriginal);
+	CopyNLJParamHashmap(phmOriginalNLJ);
 }
 
 //---------------------------------------------------------------------------
@@ -75,6 +79,7 @@ CDXLTranslateContext::~CDXLTranslateContext()
 {
 	m_phmulte->Release();
 	m_phmcolparam->Release();
+	m_colnljparam->Release();
 }
 
 //---------------------------------------------------------------------------
@@ -115,6 +120,25 @@ CDXLTranslateContext::CopyParamHashmap
 		ULONG *pulKey = GPOS_NEW(m_pmp) ULONG(ulColId);
 		pmecolidparamid->AddRef();
 		m_phmcolparam->FInsert(pulKey, pmecolidparamid);
+	}
+}
+
+void
+CDXLTranslateContext::CopyNLJParamHashmap
+(
+	HMColParam *phmOriginal
+	)
+{
+	// iterate over full map
+	HMColParamIter hashmapiter(phmOriginal);
+	while (hashmapiter.FAdvance())
+	{
+		CMappingElementColIdParamId *pmecolidparamid = const_cast<CMappingElementColIdParamId *>(hashmapiter.Pt());
+
+		const ULONG ulColId = pmecolidparamid->UlColId();
+		ULONG *pulKey = GPOS_NEW(m_pmp) ULONG(ulColId);
+		pmecolidparamid->AddRef();
+		m_colnljparam->FInsert(pulKey, pmecolidparamid);
 	}
 }
 
@@ -203,4 +227,17 @@ CDXLTranslateContext::FInsertParamMapping
 	return m_phmcolparam->FInsert(pulKey, pmecolidparamid);
 }
 
+BOOL
+CDXLTranslateContext::FInsertNLJParamMapping
+(
+	ULONG ulColId,
+	CMappingElementColIdParamId *pmecolidparamid
+	)
+{
+	// copy key
+	ULONG *pulKey = GPOS_NEW(m_pmp) ULONG(ulColId);
+
+	// insert colid->target entry mapping in the hash map
+	return m_phmcolparam->FInsert(pulKey, pmecolidparamid);
+}
 // EOF

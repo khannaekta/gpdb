@@ -68,6 +68,9 @@ namespace gpdxl
 			// mappings ColId->ParamId used for outer refs in subplans
 			HMColParam *m_phmcolparam;
 
+			// mappings ColId->ParamId used for outer refs in NLJ
+			HMColParam *m_colnljparam;
+
 			// is the node for which this context is built a child of an aggregate node
 			// This is used to assign 0 instead of OUTER for the varno value of columns
 			// in an Agg node, as expected in GPDB
@@ -78,11 +81,14 @@ namespace gpdxl
 			// copy the params hashmap
 			void CopyParamHashmap(HMColParam *phmOriginal);
 
+			// copy the NLJ params hashmap
+			void CopyNLJParamHashmap(HMColParam *phmOriginal);
+
 		public:
 			// ctor/dtor
 			CDXLTranslateContext(IMemoryPool *pmp, BOOL fChildAggNode);
 
-			CDXLTranslateContext(IMemoryPool *pmp, BOOL fChildAggNode, HMColParam *phmOriginal);
+			CDXLTranslateContext(IMemoryPool *pmp, BOOL fChildAggNode, HMColParam *phmOriginal, HMColParam *phmOriginalNLJ = NULL);
 
 			~CDXLTranslateContext();
 
@@ -95,17 +101,28 @@ namespace gpdxl
 				return m_phmcolparam;
 			}
 
+			// return NLJ params hashmap
+			HMColParam *PhmColNLJParam()
+			{
+				return m_colnljparam;
+			}
+
 			// return the target entry corresponding to the given ColId
 			const TargetEntry *Pte(ULONG ulColId) const;
 
 			// return the param id corresponding to the given ColId
 			const CMappingElementColIdParamId *Pmecolidparamid(ULONG ulColId) const;
 
+			// return the param id corresponding to the given ColId in NLJ
+			const CMappingElementColIdParamId *PmecolidparamidNLJ(ULONG ulColId) const;
 			// store the mapping of the given column id and target entry
 			void InsertMapping(ULONG ulColId, TargetEntry *pte);
 
 			// store the mapping of the given column id and param id
 			BOOL FInsertParamMapping(ULONG ulColId, CMappingElementColIdParamId *pmecolidparamid);
+
+			// store the mapping of the given column id and param id
+			BOOL FInsertNLJParamMapping(ULONG ulColId, CMappingElementColIdParamId *pmecolidparamid);
 	};
 
 

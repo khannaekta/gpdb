@@ -1896,7 +1896,7 @@ CTranslatorDXLToScalar::PexprFromDXLNodeScId
 	// scalar identifier
 	CDXLScalarIdent *pdxlop = CDXLScalarIdent::PdxlopConvert(pdxlnIdent->Pdxlop());
 	Expr *pexprResult = NULL;
-	if (NULL == pmapcidvarplstmt || NULL == pmapcidvarplstmt->PpdxltrctxOut()->Pmecolidparamid(pdxlop->Pdxlcr()->UlID()))
+	if (NULL == pmapcidvarplstmt || NULL == pmapcidvarplstmt->PpdxltrctxOut()->Pmecolidparamid(pdxlop->Pdxlcr()->UlID()) || NULL == pmapcidvarplstmt->PpdxltrctxOut()->PmecolidparamidNLJ(pdxlop->Pdxlcr()->UlID()))
 	{
 		// not an outer ref -> create var node
 		pexprResult = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
@@ -1905,9 +1905,12 @@ CTranslatorDXLToScalar::PexprFromDXLNodeScId
 	{
 		// outer ref -> create param node
 		pexprResult = (Expr *) pmapcidvarplstmt->PparamFromDXLNodeScId(pdxlop);
-		if(//something)
-		   // create a NLJParam pexprResult = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
-		   // && add it yo m_CurrOuterParam
+		if(NULL != pmapcidvarplstmt->PpdxltrctxOut()->PmecolidparamidNLJ(pdxlop->Pdxlcr()->UlID()))
+		{
+			// create a NLJParam pexprResult = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
+			// && add it yo m_CurrOuterParam
+		}
+
 	}
 
 	if (NULL  == pexprResult)

@@ -1711,8 +1711,8 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 	DrgPdxltrctx *pdrgpdxltrctxWithSiblings = GPOS_NEW(m_pmp) DrgPdxltrctx(m_pmp);
 	Plan *pplanLeft = NULL;
 	Plan *pplanRight = NULL;
-	CDXLTranslateContext dxltrctxLeft(m_pmp, false, pdxltrctxOut->PhmColParam());
-	CDXLTranslateContext dxltrctxRight(m_pmp, false, pdxltrctxOut->PhmColParam());
+	CDXLTranslateContext dxltrctxLeft(m_pmp, false, pdxltrctxOut->PhmColParam(), pdxltrctxOut->PhmColNLJParam());
+	CDXLTranslateContext dxltrctxRight(m_pmp, false, pdxltrctxOut->PhmColParam(), pdxltrctxOut->PhmColNLJParam());
 
 	if (pdxlnlj->FIndexNLJ())
 	{
@@ -1729,7 +1729,7 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 			ULONG ulColid = pdxlcr->UlID();
 			INT iTypeModifier = pdxlcr->ITypeModifier();
 
-			if (NULL == dxltrctxRight.Pmecolidparamid(ulColid))
+			if (NULL == dxltrctxRight.PmecolidparamidNLJ(ulColid))
 			{
 				// keep outer reference mapping to the original column for subsequent subplans
 				CMappingElementColIdParamId *pmecolidparamid = GPOS_NEW(m_pmp) CMappingElementColIdParamId(ulColid, m_pctxdxltoplstmt->UlNextParamId(), pmdid, iTypeModifier);
@@ -1737,7 +1737,7 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 #ifdef GPOS_DEBUG
 				BOOL fInserted =
 #endif
-				dxltrctxRight.FInsertParamMapping(ulColid, pmecolidparamid);
+				dxltrctxRight.FInsertNLJParamMapping(ulColid, pmecolidparamid);
 				GPOS_ASSERT(fInserted);
 			}
 		}
