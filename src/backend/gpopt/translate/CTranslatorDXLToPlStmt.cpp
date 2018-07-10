@@ -504,60 +504,60 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
  */
 
 //	List *quals = ((IndexScan *)pplanRight)->indexqual;
-	ListCell *q = NULL;
-	ListCell *lc;
-
-	foreach(lc, m_curOuterParams)
-	{
-		NestLoopParam *param = (NestLoopParam *) lfirst(lc);
-		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
-		m_pctxdxltoplstmt->UlNextParamId();
-	}
-
-	int paramno = gpdb::UlListLength(m_curOuterParams);
-
-	List *quals = ((Plan *)pplanRight)->qual;
-	q = NULL;
-	foreach(q, quals)
-	{
-		List *qualargs = ((OpExpr *) lfirst(q))->args;
-		List *finalquals = NIL;
-		Param *pparam = NULL;
-		ListCell *v = NULL;
-		finalquals = NIL;
-		pparam = NULL;
-
-		ForEach (v, qualargs)
-		{
-			Var *var = (Var*) lfirst(v);
-			if(var->varno == OUTER)
-			{
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = paramno;
-				pparam->paramtype = var->vartype;
-				pparam->paramtypmod = var->vartypmod;
-				pparam->paramcollid = var->varcollid;
-				pparam->location = var->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
-
-				nestloopparam->paramno = paramno;
-				nestloopparam->paramval = var;
-
-				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
-				m_pctxdxltoplstmt->UlNextParamId();
-
-				paramno++;
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-		}
-		*qualargs = *finalquals;
-	}
-
-	gpdb::FreeList(m_curOuterParams);
-	m_curOuterParams = NIL;
+//	ListCell *q = NULL;
+//	ListCell *lc;
+//
+//	foreach(lc, m_curOuterParams)
+//	{
+//		NestLoopParam *param = (NestLoopParam *) lfirst(lc);
+//		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
+//		m_pctxdxltoplstmt->UlNextParamId();
+//	}
+//
+//	int paramno = gpdb::UlListLength(m_curOuterParams);
+//
+//	List *quals = ((Plan *)pplanRight)->qual;
+//	q = NULL;
+//	foreach(q, quals)
+//	{
+//		List *qualargs = ((OpExpr *) lfirst(q))->args;
+//		List *finalquals = NIL;
+//		Param *pparam = NULL;
+//		ListCell *v = NULL;
+//		finalquals = NIL;
+//		pparam = NULL;
+//
+//		ForEach (v, qualargs)
+//		{
+//			Var *var = (Var*) lfirst(v);
+//			if(var->varno == OUTER)
+//			{
+//				pparam = MakeNode(Param);
+//				pparam->paramkind = PARAM_EXEC;
+//				pparam->paramid = paramno;
+//				pparam->paramtype = var->vartype;
+//				pparam->paramtypmod = var->vartypmod;
+//				pparam->paramcollid = var->varcollid;
+//				pparam->location = var->location;
+//				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
+//				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
+//
+//				nestloopparam->paramno = paramno;
+//				nestloopparam->paramval = var;
+//
+//				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
+//				m_pctxdxltoplstmt->UlNextParamId();
+//
+//				paramno++;
+//				continue;
+//			}
+//			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
+//		}
+//		*qualargs = *finalquals;
+//	}
+//
+//	gpdb::FreeList(m_curOuterParams);
+//	m_curOuterParams = NIL;
 }
 
 
@@ -940,7 +940,9 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		CDXLNode *pdxlnIndexCond = (*pdxlnIndexCondList)[ul];
 
 		Expr *pexprOrigIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
-		List* qualargs = ((OpExpr *)pexprOrigIndexCond)->args;
+		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
+
+		/*List* qualargs = ((OpExpr *)pexprOrigIndexCond)->args;
 		List *finalquals = NIL;
 		ListCell *v;
 		int paramno = 0;
@@ -973,7 +975,6 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 		*qualargs = *finalquals;
 
 
-		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
 
 		finalquals = NIL;
 		paramno = 0;
@@ -999,7 +1000,7 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
 		}
 		*qualargs = *finalquals;
-
+*/
 
 		GPOS_ASSERT((IsA(pexprIndexCond, OpExpr) || IsA(pexprIndexCond, ScalarArrayOpExpr))
 				&& "expected OpExpr or ScalarArrayOpExpr in index qual");
@@ -1703,9 +1704,6 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 	CDXLNode *pdxlnFilter = (*pdxlnNLJ)[EdxlnljIndexFilter];
 	CDXLNode *pdxlnJoinFilter = (*pdxlnNLJ)[EdxlnljIndexJoinFilter];
 
-	CDXLTranslateContext dxltrctxLeft(m_pmp, false, pdxltrctxOut->PhmColParam());
-	CDXLTranslateContext dxltrctxRight(m_pmp, false, pdxltrctxOut->PhmColParam());
-
 	// setting of prefetch_inner to true except for the case of index NLJ where we cannot prefetch inner
 	// because inner child depends on variables coming from outer child
 	pj->prefetch_inner = !pdxlnlj->FIndexNLJ();
@@ -1713,8 +1711,37 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 	DrgPdxltrctx *pdrgpdxltrctxWithSiblings = GPOS_NEW(m_pmp) DrgPdxltrctx(m_pmp);
 	Plan *pplanLeft = NULL;
 	Plan *pplanRight = NULL;
+	CDXLTranslateContext dxltrctxLeft(m_pmp, false, pdxltrctxOut->PhmColParam());
+	CDXLTranslateContext dxltrctxRight(m_pmp, false, pdxltrctxOut->PhmColParam());
+
 	if (pdxlnlj->FIndexNLJ())
 	{
+
+		const DrgPdxlcr *pdrgdxlcrOuterRefs = pdxlnlj->DrgdxlcrOuterRefs();
+
+		const ULONG ulLen = pdrgdxlcrOuterRefs->UlLength();
+
+		// insert new outer ref mappings in the subplan translate context
+		for (ULONG ul = 0; ul < ulLen; ul++)
+		{
+			CDXLColRef *pdxlcr = (*pdrgdxlcrOuterRefs)[ul];
+			IMDId *pmdid = pdxlcr->PmdidType();
+			ULONG ulColid = pdxlcr->UlID();
+			INT iTypeModifier = pdxlcr->ITypeModifier();
+
+			if (NULL == dxltrctxRight.Pmecolidparamid(ulColid))
+			{
+				// keep outer reference mapping to the original column for subsequent subplans
+				CMappingElementColIdParamId *pmecolidparamid = GPOS_NEW(m_pmp) CMappingElementColIdParamId(ulColid, m_pctxdxltoplstmt->UlNextParamId(), pmdid, iTypeModifier);
+
+#ifdef GPOS_DEBUG
+				BOOL fInserted =
+#endif
+				dxltrctxRight.FInsertParamMapping(ulColid, pmecolidparamid);
+				GPOS_ASSERT(fInserted);
+			}
+		}
+
 		// right child (the index scan side) has references to left child's columns,
 		// we need to translate left child first to load its columns into translation context
 		pplanLeft = PplFromDXL(pdxlnLeft, &dxltrctxLeft, pdrgpdxltrctxPrevSiblings);

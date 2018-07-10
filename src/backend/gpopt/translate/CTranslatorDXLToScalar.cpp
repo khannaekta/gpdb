@@ -1905,6 +1905,9 @@ CTranslatorDXLToScalar::PexprFromDXLNodeScId
 	{
 		// outer ref -> create param node
 		pexprResult = (Expr *) pmapcidvarplstmt->PparamFromDXLNodeScId(pdxlop);
+		if(//something)
+		   // create a NLJParam pexprResult = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
+		   // && add it yo m_CurrOuterParam
 	}
 
 	if (NULL  == pexprResult)
