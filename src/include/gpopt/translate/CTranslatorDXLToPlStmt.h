@@ -195,7 +195,7 @@ namespace gpdxl
 			// Set the bitmapset of a plan to the list of param_ids defined by the plan
 			void SetParamIds(Plan *);
 
-			void SetNLParams(Plan *, Plan*);
+			void SetNLParams(Plan *, CDXLTranslateContext *);
 
 			// Set the qDispSliceId in the subplans defining an initplan
 			void SetInitPlanSliceInformation(SubPlan *);

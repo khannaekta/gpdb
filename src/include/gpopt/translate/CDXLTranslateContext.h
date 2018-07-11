@@ -17,12 +17,15 @@
 #ifndef GPDXL_CDXLTranslateContext_H
 #define GPDXL_CDXLTranslateContext_H
 
+
 #include "gpopt/translate/CMappingElementColIdParamId.h"
 
 #include "gpos/base.h"
 #include "gpos/common/CHashMap.h"
 #include "gpos/common/CHashMapIter.h"
 
+#include "postgres_ext.h"
+#include "nodes/pg_list.h"
 
 // fwd decl
 struct TargetEntry;
@@ -71,6 +74,9 @@ namespace gpdxl
 			// mappings ColId->ParamId used for outer refs in NLJ
 			HMColParam *m_colnljparam;
 
+
+			List *m_cur_outer_params;
+		
 			// is the node for which this context is built a child of an aggregate node
 			// This is used to assign 0 instead of OUTER for the varno value of columns
 			// in an Agg node, as expected in GPDB
@@ -115,6 +121,7 @@ namespace gpdxl
 
 			// return the param id corresponding to the given ColId in NLJ
 			const CMappingElementColIdParamId *PmecolidparamidNLJ(ULONG ulColId) const;
+
 			// store the mapping of the given column id and target entry
 			void InsertMapping(ULONG ulColId, TargetEntry *pte);
 
@@ -123,6 +130,14 @@ namespace gpdxl
 
 			// store the mapping of the given column id and param id
 			BOOL FInsertNLJParamMapping(ULONG ulColId, CMappingElementColIdParamId *pmecolidparamid);
+
+			List *GetCurOuterParams();
+
+			void SetCurOuterParams(List *cur_outer_params)
+			{
+				m_cur_outer_params = cur_outer_params;
+			}
+
 	};
 
 

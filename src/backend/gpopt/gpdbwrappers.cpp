@@ -432,6 +432,21 @@ gpdb::PbmsAddMember
 	return NULL;
 }
 
+bool
+gpdb::PbmsIsMember
+	(
+	int x,
+	Bitmapset *a
+	)
+{
+	GP_WRAP_START;
+	{
+		return bms_is_member(x, a);
+	}
+	GP_WRAP_END;
+	return NULL;
+}
+
 void *
 gpdb::PvCopyObject
 	(

@@ -1896,7 +1896,7 @@ CTranslatorDXLToScalar::PexprFromDXLNodeScId
 	// scalar identifier
 	CDXLScalarIdent *pdxlop = CDXLScalarIdent::PdxlopConvert(pdxlnIdent->Pdxlop());
 	Expr *pexprResult = NULL;
-	if (NULL == pmapcidvarplstmt || NULL == pmapcidvarplstmt->PpdxltrctxOut()->Pmecolidparamid(pdxlop->Pdxlcr()->UlID()) || NULL == pmapcidvarplstmt->PpdxltrctxOut()->PmecolidparamidNLJ(pdxlop->Pdxlcr()->UlID()))
+	if (NULL == pmapcidvarplstmt || (NULL == pmapcidvarplstmt->PpdxltrctxOut()->Pmecolidparamid(pdxlop->Pdxlcr()->UlID()) && NULL == pmapcidvarplstmt->PpdxltrctxOut()->PmecolidparamidNLJ(pdxlop->Pdxlcr()->UlID())))
 	{
 		// not an outer ref -> create var node
 		pexprResult = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
@@ -1905,10 +1905,17 @@ CTranslatorDXLToScalar::PexprFromDXLNodeScId
 	{
 		// outer ref -> create param node
 		pexprResult = (Expr *) pmapcidvarplstmt->PparamFromDXLNodeScId(pdxlop);
-		if(NULL != pmapcidvarplstmt->PpdxltrctxOut()->PmecolidparamidNLJ(pdxlop->Pdxlcr()->UlID()))
+		int paramno = ((Param *) pexprResult)->paramid;
+		if(NULL != pmapcidvarplstmt->PpdxltrctxOut()->PmecolidparamidNLJ(pdxlop->Pdxlcr()->UlID())) // mapping m1 paramid -> var. Check if pexprResult is in m1, dont create NLJParam, else create NLJParam
 		{
 			// create a NLJParam pexprResult = (Expr *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
 			// && add it yo m_CurrOuterParam
+
+			NestLoopParam *nlp = MakeNode(NestLoopParam);
+			nlp->paramno = paramno;
+			nlp->paramval = (Var *) pmapcidvar->PvarFromDXLNodeScId(pdxlop);
+
+			pmapcidvarplstmt->PpdxltrctxOut()->SetCurOuterParams(gpdb::PlAppendElement(pmapcidvarplstmt->PpdxltrctxOut()->GetCurOuterParams(), (void *) nlp));
 		}
 
 	}

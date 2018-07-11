@@ -420,7 +420,7 @@ CTranslatorDXLToPlStmt::SetParamIds(Plan* pplan)
 //
 //---------------------------------------------------------------------------
 void
-CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
+CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, CDXLTranslateContext *ctxt)
 {
 //	List *plParams = gpdb::PlExtractNodesPlan(pplan, T_Param, true);
 
@@ -558,6 +558,21 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, Plan* pplanRight)
 //
 //	gpdb::FreeList(m_curOuterParams);
 //	m_curOuterParams = NIL;
+
+
+	ListCell *lc;
+	Bitmapset  *nljparam_bitmapset = NULL;
+
+	List *cur_outer_params = ctxt->GetCurOuterParams();
+	foreach(lc, cur_outer_params)
+	{
+		NestLoopParam *param = (NestLoopParam *) lfirst(lc);
+		if(gpdb::PbmsIsMember(param->paramno, nljparam_bitmapset))
+			continue;
+		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
+		//m_pctxdxltoplstmt->UlNextParamId();
+		nljparam_bitmapset = gpdb::PbmsAddMember(nljparam_bitmapset, param->paramno);
+	}
 }
 
 
@@ -1721,7 +1736,7 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 
 		const ULONG ulLen = pdrgdxlcrOuterRefs->UlLength();
 
-		// insert new outer ref mappings in the subplan translate context
+		// insert new outer ref mappings in the NLJ translate context
 		for (ULONG ul = 0; ul < ulLen; ul++)
 		{
 			CDXLColRef *pdxlcr = (*pdrgdxlcrOuterRefs)[ul];
@@ -1789,8 +1804,9 @@ CTranslatorDXLToPlStmt::PnljFromDXLNLJ
 					pdxltrctxOut
 					);
 
+
 	if (pdxlnlj->FIndexNLJ())
-		SetNLParams(pplan, pplanRight);
+		SetNLParams(pplan, &dxltrctxRight);
 
 	pplan->lefttree = pplanLeft;
 	pplan->righttree = pplanRight;
@@ -5551,7 +5567,7 @@ CTranslatorDXLToPlStmt::PplanBitmapTableScan
 							pdrgpdxltrctxPrevSiblings,
 							pdxltrctxOut
 							);
-	ListCell *q;
+/*	ListCell *q;
 	foreach(q, pdbts->bitmapqualorig)
 	{
 		List* qualargs = ((OpExpr *) lfirst(q))->args;
@@ -5580,7 +5596,7 @@ CTranslatorDXLToPlStmt::PplanBitmapTableScan
 		}
 		*qualargs = *finalquals;
 	}
-
+*/
 	pdbts->scan.plan.lefttree = PplanBitmapAccessPath
 								(
 								pdxlnBitmapAccessPath,

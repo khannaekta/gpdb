@@ -33,6 +33,7 @@ CDXLTranslateContext::CDXLTranslateContext
 	)
 	:
 	m_pmp(pmp),
+	m_cur_outer_params(NIL),
 	m_fChildAggNode(fChildAggNode)
 {
 	// initialize hash table
@@ -54,17 +55,19 @@ CDXLTranslateContext::CDXLTranslateContext
 	IMemoryPool *pmp,
 	BOOL fChildAggNode,
 	HMColParam *phmOriginal,
-    HMColParam *phmOriginalNLJ = NULL
+    HMColParam *phmOriginalNLJ
 	)
 	:
 	m_pmp(pmp),
+	m_cur_outer_params(NIL),
 	m_fChildAggNode(fChildAggNode)
 {
 	m_phmulte = GPOS_NEW(m_pmp) HMUlTe(m_pmp);
 	m_phmcolparam = GPOS_NEW(m_pmp) HMColParam(m_pmp);
 	m_colnljparam = GPOS_NEW(m_pmp) HMColParam(m_pmp);
 	CopyParamHashmap(phmOriginal);
-	CopyNLJParamHashmap(phmOriginalNLJ);
+	if(NULL != phmOriginalNLJ)
+		CopyNLJParamHashmap(phmOriginalNLJ);
 }
 
 //---------------------------------------------------------------------------
@@ -178,6 +181,15 @@ CDXLTranslateContext::Pmecolidparamid
 	return m_phmcolparam->PtLookup(&ulColId);
 }
 
+const CMappingElementColIdParamId *
+CDXLTranslateContext::PmecolidparamidNLJ
+	(
+	ULONG ulColId
+	)
+const
+{
+	return m_colnljparam->PtLookup(&ulColId);
+}
 //---------------------------------------------------------------------------
 //	@function:
 //		CDXLTranslateContext::InsertMapping
@@ -238,6 +250,14 @@ CDXLTranslateContext::FInsertNLJParamMapping
 	ULONG *pulKey = GPOS_NEW(m_pmp) ULONG(ulColId);
 
 	// insert colid->target entry mapping in the hash map
-	return m_phmcolparam->FInsert(pulKey, pmecolidparamid);
+	return m_colnljparam->FInsert(pulKey, pmecolidparamid);
 }
+
+List*
+CDXLTranslateContext::GetCurOuterParams()
+{
+	return m_cur_outer_params;
+}
+
+
 // EOF

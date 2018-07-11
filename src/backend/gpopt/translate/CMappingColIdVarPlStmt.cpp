@@ -105,7 +105,7 @@ CMappingColIdVarPlStmt::PparamFromDXLNodeScId
 	Param *pparam = NULL;
 
 	const ULONG ulColId = pdxlop->Pdxlcr()->UlID();
-	const CMappingElementColIdParamId *pmecolidparamid = m_pdxltrctxOut->Pmecolidparamid(ulColId);
+	const CMappingElementColIdParamId *pmecolidparamid = m_pdxltrctxOut->Pmecolidparamid(ulColId) == NULL ? m_pdxltrctxOut->PmecolidparamidNLJ(ulColId) : m_pdxltrctxOut->Pmecolidparamid(ulColId);
 
 	if (NULL != pmecolidparamid)
 	{

@@ -138,6 +138,9 @@ namespace gpdb {
 	// add member to Bitmapset
 	Bitmapset *PbmsAddMember(Bitmapset *a, int x);
 
+	// checks member in Bitmapset
+	bool PbmsIsMember(int x, Bitmapset *a);
+
 	// create a copy of an object
 	void *PvCopyObject(void *from);
 
