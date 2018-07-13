@@ -99,7 +99,7 @@ ExecInitDynamicIndexScan(DynamicIndexScan *node, EState *estate, int eflags)
 									 ALLOCSET_DEFAULT_MAXSIZE);
 
 	/* We don't support eager free in DynamicIndexScan */
-	dynamicIndexScanState->indexScanState->ss.ps.delayEagerFree = true;
+	dynamicIndexScanState->ss.ps.delayEagerFree = true;
 
 	return dynamicIndexScanState;
 }
