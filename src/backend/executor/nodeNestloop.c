@@ -454,7 +454,7 @@ ExecInitNestLoop(NestLoop *node, EState *estate, int eflags)
 	{
 		if (!node->shared_outer)
 			outerPlanState(nlstate) = ExecInitNode(outerPlan(node), estate, eflags);
-		innerPlanState(nlstate) = ExecInitNode(innerPlan(node), estate, eflags);
+		innerPlanState(nlstate) = ExecInitNode(innerPlan(node), estate, eflags | EXEC_FLAG_REWIND);
 	}
 
 	/*
