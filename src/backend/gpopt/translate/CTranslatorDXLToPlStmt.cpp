@@ -3711,11 +3711,13 @@ CTranslatorDXLToPlStmt::PplanSequence
 
 	CDXLNode *pdxlnLastChild = (*pdxlnSequence)[ulArity - 1];
 
-	CDXLTranslateContext dxltrctxChild(m_pmp, false, pdxltrctxOut->PhmColParam());
+	CDXLTranslateContext dxltrctxChild(m_pmp, false, pdxltrctxOut->PhmColParam(), pdxltrctxOut->PhmColNLJParam());
 
 	Plan *pplanLastChild = PplFromDXL(pdxlnLastChild, &dxltrctxChild, pdrgpdxltrctxPrevSiblings);
 	pplan->nMotionNodes = pplanLastChild->nMotionNodes;
 
+	pdxltrctxOut->SetCurOuterParams(dxltrctxChild.GetCurOuterParams());
+	
 	CDXLNode *pdxlnPrL = (*pdxlnSequence)[0];
 
 	DrgPdxltrctx *pdrgpdxltrctx = GPOS_NEW(m_pmp) DrgPdxltrctx(m_pmp);
