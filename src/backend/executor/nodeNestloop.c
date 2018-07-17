@@ -440,13 +440,13 @@ ExecInitNestLoop(NestLoop *node, EState *estate, int eflags)
 	 * Until we find a better way to handle the dependency of ShareInputScan on 
 	 * execution order, this is pretty much what we have to deal with.
 	 */
-	if (node->nestParams == NIL)
-		eflags |= EXEC_FLAG_REWIND;
-	else
-		eflags &= ~EXEC_FLAG_REWIND;
+//	if (node->nestParams == NIL)
+//		eflags |= EXEC_FLAG_REWIND;
+//	else
+//		eflags &= ~EXEC_FLAG_REWIND;
 	if (nlstate->prefetch_inner)
 	{
-		innerPlanState(nlstate) = ExecInitNode(innerPlan(node), estate, eflags);
+		innerPlanState(nlstate) = ExecInitNode(innerPlan(node), estate, eflags | EXEC_FLAG_REWIND);
 		if (!node->shared_outer)
 			outerPlanState(nlstate) = ExecInitNode(outerPlan(node), estate, eflags);
 	}
