@@ -294,6 +294,13 @@ BitmapTableScanFetchNext(ScanState *node)
 {
 	BitmapTableScanState *scanState = (BitmapTableScanState *) node;
 	TupleTableSlot *slot = BitmapTableScanPlanQualTuple(scanState);
+	if (scanState->ss.ps.ps_ExprContext == NULL)
+	{
+		ExecAssignExprContext(scanState->ss.ps.state, &scanState->ss.ps);
+		ExecAssignProjectionInfo(&node->ps,
+								 node->ss_ScanTupleSlot->tts_tupleDescriptor);
+	}
+	
 
 	while (TupIsNull(slot))
 	{

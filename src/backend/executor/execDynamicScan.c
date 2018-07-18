@@ -529,6 +529,7 @@ DynamicScan_ReScan(ScanState *scanState)
 	Assert(T_BitmapTableScanState == scanState->ps.type);
 
 	Assert(scanState->tableType >= 0 && scanState->tableType < TableTypeInvalid);
+	scanState->scan_state = SCAN_INIT;
 
 	/* Notify controller about the request for rescan */
 	DynamicScan_Controller(scanState, SCAN_RESCAN, NULL /* PartitionInitMethod */,
