@@ -422,144 +422,6 @@ CTranslatorDXLToPlStmt::SetParamIds(Plan* pplan)
 void
 CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, CDXLTranslateContext *ctxt)
 {
-//	List *plParams = gpdb::PlExtractNodesPlan(pplan, T_Param, true);
-
-
-/*
-	if(! IsA(pplanRight, IndexScan))
-		return;
-
-	IndexScan* planRight = (IndexScan *) pplanRight;
-
-	foreach(q, quals)
-	{
-		List *qualargs = ((OpExpr *) lfirst(q))->args;
-		List *finalquals = NIL;
-		Param *pparam = NULL;
-		ListCell *v = NULL;
-
-
-		ForEach (v, qualargs)
-		{
-
-			Var *var = (Var*) lfirst(v);
-			if(var->varno == OUTER)
-			{
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = paramno;
-				pparam->paramtype = var->vartype;
-				pparam->paramtypmod = var->vartypmod;
-				pparam->paramcollid = var->varcollid;
-				pparam->location = var->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
-
-				nestloopparam->paramno = paramno;
-				nestloopparam->paramval = var;
-
-				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
-				m_pctxdxltoplstmt->UlNextParamId();
-
-				paramno++;
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-		}
-		*qualargs = *finalquals;
-	}
-
-	paramno = 0;
-	quals = planRight->indexqualorig;
-	q = NULL;
-	foreach(q, quals)
-	{
-		List *qualargs = ((OpExpr *) lfirst(q))->args;
-		List *finalquals = NIL;
-		Param *pparam = NULL;
-		ListCell *v = NULL;
-		finalquals = NIL;
-		pparam = NULL;
-
-		ForEach (v, qualargs)
-		{
-			Var *var = (Var*) lfirst(v);
-			if(var->varno == OUTER)
-			{
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = paramno;
-				pparam->paramtype = var->vartype;
-				pparam->paramtypmod = var->vartypmod;
-				pparam->paramcollid = var->varcollid;
-				pparam->location = var->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				paramno++;
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-		}
-		*qualargs = *finalquals;
-	}
- */
-
-//	List *quals = ((IndexScan *)pplanRight)->indexqual;
-//	ListCell *q = NULL;
-//	ListCell *lc;
-//
-//	foreach(lc, m_curOuterParams)
-//	{
-//		NestLoopParam *param = (NestLoopParam *) lfirst(lc);
-//		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
-//		m_pctxdxltoplstmt->UlNextParamId();
-//	}
-//
-//	int paramno = gpdb::UlListLength(m_curOuterParams);
-//
-//	List *quals = ((Plan *)pplanRight)->qual;
-//	q = NULL;
-//	foreach(q, quals)
-//	{
-//		List *qualargs = ((OpExpr *) lfirst(q))->args;
-//		List *finalquals = NIL;
-//		Param *pparam = NULL;
-//		ListCell *v = NULL;
-//		finalquals = NIL;
-//		pparam = NULL;
-//
-//		ForEach (v, qualargs)
-//		{
-//			Var *var = (Var*) lfirst(v);
-//			if(var->varno == OUTER)
-//			{
-//				pparam = MakeNode(Param);
-//				pparam->paramkind = PARAM_EXEC;
-//				pparam->paramid = paramno;
-//				pparam->paramtype = var->vartype;
-//				pparam->paramtypmod = var->vartypmod;
-//				pparam->paramcollid = var->varcollid;
-//				pparam->location = var->location;
-//				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-//				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
-//
-//				nestloopparam->paramno = paramno;
-//				nestloopparam->paramval = var;
-//
-//				((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) nestloopparam);
-//				m_pctxdxltoplstmt->UlNextParamId();
-//
-//				paramno++;
-//				continue;
-//			}
-//			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-//		}
-//		*qualargs = *finalquals;
-//	}
-//
-//	gpdb::FreeList(m_curOuterParams);
-//	m_curOuterParams = NIL;
-
-
 	ListCell *lc;
 	Bitmapset  *nljparam_bitmapset = NULL;
 
@@ -570,7 +432,6 @@ CTranslatorDXLToPlStmt::SetNLParams(Plan* pplan, CDXLTranslateContext *ctxt)
 		if(gpdb::PbmsIsMember(param->paramno, nljparam_bitmapset))
 			continue;
 		((NestLoop *)pplan)->nestParams = gpdb::PlAppendElement(((NestLoop *)pplan)->nestParams, (void *) param);
-		//m_pctxdxltoplstmt->UlNextParamId();
 		nljparam_bitmapset = gpdb::PbmsAddMember(nljparam_bitmapset, param->paramno);
 	}
 }
@@ -875,10 +736,6 @@ CTranslatorDXLToPlStmt::PisFromDXLIndexScan
 	 * available or needed in IndexScan. Ignore them.
 	 */
 	SetParamIds(pplan);
-//	if(nestloop_params)
-//	{
-//		SetNLParams(pplan, nestloop_params);
-//	}
 
 	return (Plan *) pis;
 }
@@ -956,66 +813,6 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 
 		Expr *pexprOrigIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
 		Expr *pexprIndexCond = m_pdxlsctranslator->PexprFromDXLNodeScalar(pdxlnIndexCond, &mapcidvarplstmt);
-
-		/*List* qualargs = ((OpExpr *)pexprOrigIndexCond)->args;
-		List *finalquals = NIL;
-		ListCell *v;
-		int paramno = 0;
-		foreach(v, qualargs)
-		{
-			Var *var = (Var*) lfirst(v);
-			if(var->varno == OUTER)
-			{
-				Param *pparam = NULL;
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = paramno;
-				pparam->paramtype = var->vartype;
-				pparam->paramtypmod = var->vartypmod;
-				pparam->paramcollid = var->varcollid;
-				pparam->location = var->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				NestLoopParam *nestloopparam = MakeNode(NestLoopParam);
-
-				nestloopparam->paramno = paramno;
-				nestloopparam->paramval = var;
-
-				m_curOuterParams = gpdb::PlAppendElement(m_curOuterParams, (void *) nestloopparam);
-				paramno++;
-
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-		}
-		*qualargs = *finalquals;
-
-
-
-		finalquals = NIL;
-		paramno = 0;
-		qualargs = ((OpExpr *)pexprIndexCond)->args;
-		v = NULL;
-		foreach(v, qualargs)
-		{
-			Var *var = (Var*) lfirst(v);
-			if(var->varno == OUTER)
-			{
-				Param *pparam = NULL;
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = paramno;
-				pparam->paramtype = var->vartype;
-				pparam->paramtypmod = var->vartypmod;
-				pparam->paramcollid = var->varcollid;
-				pparam->location = var->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				paramno++;
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-		}
-		*qualargs = *finalquals;
-*/
 
 		GPOS_ASSERT((IsA(pexprIndexCond, OpExpr) || IsA(pexprIndexCond, ScalarArrayOpExpr))
 				&& "expected OpExpr or ScalarArrayOpExpr in index qual");
@@ -3939,8 +3736,6 @@ CTranslatorDXLToPlStmt::PplanDIS
 	 */
 	SetParamIds(pplan);
 
-	//SetNLParams(pplan, nestloop_vars);
-
 	return (Plan *) pdis;
 }
 
@@ -5569,36 +5364,7 @@ CTranslatorDXLToPlStmt::PplanBitmapTableScan
 							pdrgpdxltrctxPrevSiblings,
 							pdxltrctxOut
 							);
-/*	ListCell *q;
-	foreach(q, pdbts->bitmapqualorig)
-	{
-		List* qualargs = ((OpExpr *) lfirst(q))->args;
-		List *finalquals = NIL;
-		ListCell *v;
-		int paramno = 0;
-		foreach(v, qualargs)
-		{
-			Var *var = (Var*) lfirst(v);
-			if(var->varno == OUTER)
-			{
-				Param *pparam = NULL;
-				pparam = MakeNode(Param);
-				pparam->paramkind = PARAM_EXEC;
-				pparam->paramid = paramno;
-				pparam->paramtype = var->vartype;
-				pparam->paramtypmod = var->vartypmod;
-				pparam->paramcollid = var->varcollid;
-				pparam->location = var->location;
-				finalquals = gpdb::PlAppendElement(finalquals, (void *) pparam);
-				paramno++;
 
-				continue;
-			}
-			finalquals = gpdb::PlAppendElement(finalquals, (void *)var);
-		}
-		*qualargs = *finalquals;
-	}
-*/
 	pdbts->scan.plan.lefttree = PplanBitmapAccessPath
 								(
 								pdxlnBitmapAccessPath,
