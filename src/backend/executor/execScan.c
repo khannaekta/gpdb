@@ -447,7 +447,6 @@ InitScanStateInternal(ScanState *scanState, Plan *plan, EState *estate,
 void
 FreeScanRelationInternal(ScanState *scanState, bool closeCurrentRelation)
 {
-	ExecFreeExprContext(&scanState->ps);
 	ExecClearTuple(scanState->ps.ps_ResultTupleSlot);
 	ExecClearTuple(scanState->ss_ScanTupleSlot);
 

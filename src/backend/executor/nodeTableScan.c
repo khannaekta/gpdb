@@ -63,6 +63,7 @@ ExecEndTableScan(TableScanState *node)
 		EndTableScanRelation(&(node->ss));
 	}
 
+	ExecFreeExprContext(((PlanState *) node));
 	FreeScanRelationInternal((ScanState *)node, true /* closeCurrentRelation */);
 	EndPlanStateGpmonPkt(&node->ss.ps);
 }

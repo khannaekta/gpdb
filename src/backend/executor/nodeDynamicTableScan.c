@@ -280,6 +280,8 @@ ExecEndDynamicTableScan(DynamicTableScanState *node)
 {
 	DynamicTableScanEndCurrentScan(node);
 
+	ExecFreeExprContext(((PlanState *) node));
+
 	/* We do not close the relation. We closed it in DynamicScan_CleanupOneRelation. */
 	FreeScanRelationInternal((ScanState *)node, false /* closeCurrentRelation */);
 	EndPlanStateGpmonPkt(&node->tableScanState.ss.ps);
