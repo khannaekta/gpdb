@@ -71,8 +71,6 @@ ExecInitDynamicBitmapIndexScan(DynamicBitmapIndexScan *node, EState *estate, int
 									 ALLOCSET_DEFAULT_INITSIZE,
 									 ALLOCSET_DEFAULT_MAXSIZE);
 
-	dynamicBitmapIndexScanState->ss.ps.delayEagerFree = true;
-
 	return dynamicBitmapIndexScanState;
 }
 
