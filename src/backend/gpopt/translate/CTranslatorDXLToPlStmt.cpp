@@ -83,8 +83,7 @@ CTranslatorDXLToPlStmt::CTranslatorDXLToPlStmt
 	m_plResultRelations(NIL),
 	m_ulExternalScanCounter(0),
 	m_ulSegments(ulSegments),
-	m_ulPartitionSelectorCounter(0),
-	m_curOuterParams(NIL)
+	m_ulPartitionSelectorCounter(0)
 {
 	m_pdxlsctranslator = GPOS_NEW(m_pmp) CTranslatorDXLToScalar(m_pmp, m_pmda, m_ulSegments);
 	InitTranslators();
@@ -710,7 +709,6 @@ CTranslatorDXLToPlStmt::PisFromDXLIndexScan
 	List *plIndexOrigConditions = NIL;
 	List *plIndexStratgey = NIL;
 	List *plIndexSubtype = NIL;
-	List *nestloop_params = NIL;
 
 	TranslateIndexConditions
 		(
@@ -725,8 +723,7 @@ CTranslatorDXLToPlStmt::PisFromDXLIndexScan
 		&plIndexConditions, 
 		&plIndexOrigConditions, 
 		&plIndexStratgey, 
-		&plIndexSubtype,
-		&nestloop_params
+		&plIndexSubtype
 		);
 
 	pis->indexqual = plIndexConditions;
@@ -796,8 +793,7 @@ CTranslatorDXLToPlStmt::TranslateIndexConditions
 	List **pplIndexConditions,
 	List **pplIndexOrigConditions,
 	List **pplIndexStratgey,
-	List **pplIndexSubtype,
-	List **nestloopvars
+	List **pplIndexSubtype
 	)
 {
 	// array of index qual info
@@ -3708,7 +3704,6 @@ CTranslatorDXLToPlStmt::PplanDIS
 	List *plIndexOrigConditions = NIL;
 	List *plIndexStratgey = NIL;
 	List *plIndexSubtype = NIL;
-	List *nestloop_vars = NIL;
 
 	TranslateIndexConditions
 		(
@@ -3723,8 +3718,7 @@ CTranslatorDXLToPlStmt::PplanDIS
 		&plIndexConditions, 
 		&plIndexOrigConditions, 
 		&plIndexStratgey, 
-		&plIndexSubtype,
-		&nestloop_vars
+		&plIndexSubtype
 		);
 
 
@@ -5574,8 +5568,7 @@ CTranslatorDXLToPlStmt::PplanBitmapIndexProbe
 		&plIndexConditions,
 		&plIndexOrigConditions,
 		&plIndexStratgey,
-		&plIndexSubtype,
-		NULL
+		&plIndexSubtype
 		);
 
 	pbis->indexqual = plIndexConditions;

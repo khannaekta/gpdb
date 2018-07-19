@@ -156,9 +156,6 @@ namespace gpdxl
 			// partition selector counter
 			ULONG m_ulPartitionSelectorCounter;
 
-			// list of outer params at each NLJ node
-			List *m_curOuterParams;
-
 			// private copy ctor
 			CTranslatorDXLToPlStmt(const CTranslatorDXLToPlStmt&);
 
@@ -648,8 +645,7 @@ namespace gpdxl
 				List **pplIndexConditions,
 				List **pplIndexOrigConditions,
 				List **pplIndexStratgey,
-				List **pplIndexSubtype,
-				List **nestloop_vars
+				List **pplIndexSubtype
 				);
 			
 			// translate the index filters
