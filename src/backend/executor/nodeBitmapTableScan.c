@@ -122,6 +122,7 @@ ExecReScanBitmapTable(BitmapTableScanState *node)
 void
 ExecEndBitmapTableScan(BitmapTableScanState *node)
 {
+	ExecFreeExprContext(&node->ss.ps);
 	BitmapTableScanEnd(node);
 
 	/*
