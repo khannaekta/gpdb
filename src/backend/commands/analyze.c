@@ -604,10 +604,42 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt, bool inh)
 	}
 	else
 	{
-		float4 relTuples;
-		float4 relPages;
-		analyzeEstimateReltuplesRelpages(RelationGetRelid(onerel), &relTuples, &relPages,
-										 vacstmt->options & VACOPT_ROOTONLY);
+		float4 relTuples = 0.0;
+		float4 relPages = 0.0;
+		List *allRelOids = NIL;
+
+		/* if GUC optimizer_analyze_root_partition is off, we do not analyze root partitions, unless
+		 * using the 'ANALYZE ROOTPARTITION tablename' command.
+		 * This is done by estimating the reltuples to be 0 and thus bypass the actual analyze.
+		 * See MPP-21427.
+		 * For mid-level partitions, we aggregate the reltuples and relpages from all leaf children beneath.
+		 */
+
+		Oid relationOid = RelationGetRelid(onerel);
+		if (rel_part_status(relationOid) == PART_STATUS_INTERIOR ||
+			(rel_is_partitioned(relationOid) && (optimizer_analyze_root_partition || vacstmt->options & VACOPT_ROOTONLY)))
+		{
+			allRelOids = rel_get_leaf_children_relids(relationOid);
+		}
+		else
+		{
+			allRelOids = list_make1_oid(relationOid);
+		}
+
+		/* iterate over all partitions and add up relTuples and RelPages */
+
+		ListCell *lc = NULL;
+		foreach (lc, allRelOids)
+		{
+			Oid	singleOid = lfirst_oid(lc);
+			float4 numTuples = get_rel_reltuples(singleOid);
+			if (numTuples < 1.0)
+				continue;
+			relTuples += numTuples;
+			relPages += get_rel_relpages(singleOid);
+		}
+
+		// End
 		totalrows = relTuples;
 		totalpages = relPages;
 		totaldeadrows = 0;
