@@ -4,6 +4,9 @@
 #
 set -euo pipefail
 
+CWDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "${CWDIR}/common.bash"
+
 # Set the DEBUG_UPGRADE envvar to a nonempty value to get (extremely) verbose
 # output.
 DEBUG_UPGRADE=${DEBUG_UPGRADE:-}
@@ -195,6 +198,35 @@ compare_dumps() {
     "
 }
 
+# We need to run configure to generate makefiles similar to how ICW
+# did it to build the extensions needed by ICW.
+
+reconfigure_and_reinstall_for_extensions() {
+	yum -y install centos-release-scl && yum -y install --nogpgcheck cmake3 devtoolset-6-gcc devtoolset-6-gcc-c++ && \
+    yum clean all && rm -rf /usr/bin/cmake && ln -s /usr/bin/cmake3 /usr/bin/cmake && \
+    echo -e 'export MANPATH=/tmp' >> /opt/gcc_env.sh && \
+    echo -e 'export INFOPATH=/tmp' >> /opt/gcc_env.sh && \
+    echo -e 'source /opt/rh/devtoolset-6/enable' >> /opt/gcc_env.sh && \
+    echo -e 'source /opt/gcc_env.sh' >> /root/.bashrc && \
+    echo -e '#!/bin/sh' >> /etc/profile.d/jdk_home.sh && \
+    echo -e 'export JAVA_HOME=/etc/alternatives/java_sdk' >> /etc/profile.d/jdk_home.sh && \
+    echo -e 'export PATH=$JAVA_HOME/bin:$PATH' >> /etc/profile.d/jdk_home.sh
+    ldconfig && mkdir -p /usr/local/greenplum-db-devel/lib/python && \
+    source /opt/gcc_env.sh
+    pushd gpdb_src
+      # The full set of configure options which were used for building the
+      # tree must be used here as well since the toplevel Makefile depends
+      # on these options for deciding what to test. Since we don't ship
+      # Perl on SLES we must also skip GPMapreduce as it uses pl/perl.
+#      if [ "$TEST_OS" == "sles" ]; then
+#        ./configure --prefix=/usr/local/greenplum-db-devel --with-python --with-libxml --disable-orca ${CONFIGURE_FLAGS}
+#      else
+       ./configure --prefix=/usr/local/greenplum-db-devel --with-perl --with-python --with-libxml --enable-mapreduce --disable-orca ${CONFIGURE_FLAGS}
+#      fi
+    popd
+#    time install_gpdb
+}
+
 CLUSTER_NAME=$(cat ./terraform*/name)
 
 GPDB_TARBALL_DIR=${1:-}
@@ -223,6 +255,9 @@ new_dump=/tmp/post_upgrade.sql
 
 set -v
 
+#time reconfigure_and_reinstall_for_extensions
+time configure
+time install_gpdb
 time load_old_db_data ${SQLDUMP_FILE:-sqldump/dump.sql.xz}
 
 for ((i=0; i<${NUMBER_OF_NODES}; ++i)); do

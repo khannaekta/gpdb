@@ -1,11 +1,11 @@
 ---
 platform: linux
 
-image_resource:
-  type: docker-image
-  source:
-    repository: toolsmiths/ccp
-    tag: "7"
+#image_resource:
+    #type: docker-image
+  # source:
+  #   repository: toolsmiths/ccp
+  #   tag: "7"
 
 inputs:
 - name: terraform
