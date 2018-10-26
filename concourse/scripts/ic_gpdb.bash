@@ -102,6 +102,8 @@ function _main() {
         time ./gpdb_src/concourse/scripts/test_binary_swap_gpdb.bash
     fi
 
+    exit 1
+
     if [ "${DUMP_DB}" == "true" ]; then
         chmod 777 sqldump
         su gpadmin -c ./gpdb_src/concourse/scripts/dumpdb.bash
