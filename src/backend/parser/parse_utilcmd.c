@@ -3041,7 +3041,7 @@ transformIndexStmt(Oid relid, IndexStmt *stmt, const char *queryString)
 	 *
 	 * If this is a CREATE INDEX statement, idxname should already exist.
 	 */
-	if (Gp_role != GP_ROLE_EXECUTE && stmt->idxname != NULL)
+	if (Gp_role != GP_ROLE_EXECUTE)
 	{
 		Oid			relId;
 
@@ -3092,6 +3092,78 @@ transformIndexStmt_recurse(Oid relid, IndexStmt *stmt, const char *queryString,
 	/* Set up pstate */
 	pstate = make_parsestate(NULL);
 	pstate->p_sourcetext = queryString;
+
+	/*
+	 * Put the parent table into the rtable so that the expressions can refer
+	 * to its fields without qualification.	 Caller is responsible for locking
+	 * relation, but we still need to open it.
+	 */
+	rte = addRangeTableEntryForRelation(pstate, rel, NULL, false, true);
+
+	/* no to join list, yes to namespaces */
+	addRTEtoQuery(pstate, rte, false, true, true);
+
+	/* take care of the where clause */
+	if (stmt->whereClause)
+	{
+		stmt->whereClause = transformWhereClause(pstate,
+												 stmt->whereClause,
+												 EXPR_KIND_INDEX_PREDICATE,
+												 "WHERE");
+		/* we have to fix its collations too */
+		assign_expr_collations(pstate, stmt->whereClause);
+	}
+
+	/* take care of any index expressions */
+	foreach(l, stmt->indexParams)
+	{
+		IndexElem  *ielem = (IndexElem *) lfirst(l);
+
+		if (ielem->expr)
+		{
+			/* Extract preliminary index col name before transforming expr */
+			if (ielem->indexcolname == NULL)
+				ielem->indexcolname = FigureIndexColname(ielem->expr);
+
+			/* Now do parse transformation of the expression */
+			ielem->expr = transformExpr(pstate, ielem->expr,
+										EXPR_KIND_INDEX_EXPRESSION);
+
+			/* We have to fix its collations too */
+			assign_expr_collations(pstate, ielem->expr);
+
+			/*
+			 * transformExpr() should have already rejected subqueries,
+			 * aggregates, and window functions, based on the EXPR_KIND_ for
+			 * an index expression.
+			 *
+			 * Also reject expressions returning sets; this is for consistency
+			 * with what transformWhereClause() checks for the predicate.
+			 * DefineIndex() will make more checks.
+			 */
+			if (expression_returns_set(ielem->expr))
+				ereport(ERROR,
+						(errcode(ERRCODE_DATATYPE_MISMATCH),
+						 errmsg("index expression cannot return a set")));
+		}
+	}
+
+	/*
+	 * For unnamed indexes, choose an index name that will be
+	 * used later when creating IndexStmts for the leaf
+	 * partitions in a partitioned table.
+	 */
+	if (stmt->idxname == NULL)
+	{
+		Relation rel = heap_open(relid, NoLock);
+		stmt->idxname = ChooseIndexName(RelationGetRelationName(rel),
+										RelationGetNamespace(rel),
+										ChooseIndexColumnNames(stmt->indexParams),
+										stmt->excludeOpNames,
+										stmt->primary,
+										stmt->isconstraint);
+		heap_close(rel, NoLock);
+	}
 
 	/* Recurse into (sub)partitions if this is a partitioned table */
 	if (recurseToPartitions)
@@ -3214,61 +3286,6 @@ transformIndexStmt_recurse(Oid relid, IndexStmt *stmt, const char *queryString,
 			result = list_concat(result,
 								 transformIndexStmt_recurse(relid, chidx, queryString,
 															masterpstate, true));
-		}
-	}
-
-	/*
-	 * Put the parent table into the rtable so that the expressions can refer
-	 * to its fields without qualification.  Caller is responsible for locking
-	 * relation, but we still need to open it.
-	 */
-	rte = addRangeTableEntryForRelation(pstate, rel, NULL, false, true);
-
-	/* no to join list, yes to namespaces */
-	addRTEtoQuery(pstate, rte, false, true, true);
-
-	/* take care of the where clause */
-	if (stmt->whereClause)
-	{
-		stmt->whereClause = transformWhereClause(pstate,
-												 stmt->whereClause,
-												 EXPR_KIND_INDEX_PREDICATE,
-												 "WHERE");
-		/* we have to fix its collations too */
-		assign_expr_collations(pstate, stmt->whereClause);
-	}
-
-	/* take care of any index expressions */
-	foreach(l, stmt->indexParams)
-	{
-		IndexElem  *ielem = (IndexElem *) lfirst(l);
-
-		if (ielem->expr)
-		{
-			/* Extract preliminary index col name before transforming expr */
-			if (ielem->indexcolname == NULL)
-				ielem->indexcolname = FigureIndexColname(ielem->expr);
-
-			/* Now do parse transformation of the expression */
-			ielem->expr = transformExpr(pstate, ielem->expr,
-										EXPR_KIND_INDEX_EXPRESSION);
-
-			/* We have to fix its collations too */
-			assign_expr_collations(pstate, ielem->expr);
-
-			/*
-			 * transformExpr() should have already rejected subqueries,
-			 * aggregates, and window functions, based on the EXPR_KIND_ for
-			 * an index expression.
-			 *
-			 * Also reject expressions returning sets; this is for consistency
-			 * with what transformWhereClause() checks for the predicate.
-			 * DefineIndex() will make more checks.
-			 */
-			if (expression_returns_set(ielem->expr))
-				ereport(ERROR,
-						(errcode(ERRCODE_DATATYPE_MISMATCH),
-						 errmsg("index expression cannot return a set")));
 		}
 	}
 
