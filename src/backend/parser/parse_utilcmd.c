@@ -3155,14 +3155,12 @@ transformIndexStmt_recurse(Oid relid, IndexStmt *stmt, const char *queryString,
 	 */
 	if (stmt->idxname == NULL)
 	{
-		Relation rel = heap_open(relid, NoLock);
 		stmt->idxname = ChooseIndexName(RelationGetRelationName(rel),
 										RelationGetNamespace(rel),
 										ChooseIndexColumnNames(stmt->indexParams),
 										stmt->excludeOpNames,
 										stmt->primary,
 										stmt->isconstraint);
-		heap_close(rel, NoLock);
 	}
 
 	/* Recurse into (sub)partitions if this is a partitioned table */
