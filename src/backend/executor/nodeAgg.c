@@ -1151,6 +1151,9 @@ ExecAgg(AggState *node)
 		if (node->hhashtable == NULL)
 		{
 			bool		tupremain;
+			
+			if (currentSliceId == 1 && Gp_role == GP_ROLE_EXECUTE && GpIdentity.segindex == 0)
+				pg_usleep(10000000);
 
 			node->hhashtable = create_agg_hash_table(node);
 			node->hashaggstatus = HASHAGG_BEFORE_FIRST_PASS;

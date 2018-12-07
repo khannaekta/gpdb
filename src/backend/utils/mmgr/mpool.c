@@ -18,33 +18,6 @@
 
 #define MPOOL_BLOCK_SIZE (64 * 1024)
 
-struct MPool 
-{
-	MemoryContextData *parent;
-	MemoryContextData *context;
-
-	/*
-	 * Total number of bytes are allocated through the memory
-	 * context.
-	 */
-	uint64 total_bytes_allocated;
-
-	/* How many bytes are used by the caller. */
-	uint64 bytes_used;
-
-	/*
-	 * When a new allocation request arrives, and the current block
-	 * does not have enough space for this request, we waste those
-	 * several bytes at the end of the block. This variable stores
-	 * total number of these wasted bytes.
-	 */
-	uint64 bytes_wasted;
-
-	/* The latest allocated block of available space. */
-	void *start;
-	void *end;
-};
-
 static void
 mpool_init(MPool *mpool)
 {
