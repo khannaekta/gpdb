@@ -39,8 +39,8 @@ export PATH
 
 # Adjust these paths for your environment
 TESTROOT=$PWD/tmp_check_$TEST_SUITE
-TEST_MASTER=$TESTROOT/data_master
-TEST_STANDBY=$TESTROOT/data_standby
+TEST_MASTER=$TESTROOT/$TESTNAME/data_master
+TEST_STANDBY=$TESTROOT/$TESTNAME/data_standby
 
 # Create the root folder for test data
 mkdir -p $TESTROOT
