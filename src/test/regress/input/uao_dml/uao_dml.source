@@ -7,6 +7,9 @@ set gp_default_storage_options='orientation=@orientation@';
 -- The queries in this test are not interesting from the point of view of
 -- testing the optimizer, so just disable ORCA to work around that.
 set optimizer=off;
+-- start_ignore
+SET Debug_print_full_dtm=on;
+-- end_ignore
 
 -- With gp_select_invisible set true, the snapshot will be SnapshotAnyData.
 -- But in one case of IndexOnlyScan, only MVCC snapshots are supported.
@@ -379,6 +382,9 @@ select count(*) from heap_ooo_del_tab1 ;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_del_tab1 ;
 set gp_select_invisible = false;
+-- start_ignore
+select * from pg_stat_activity;
+-- end_ignore
 vacuum heap_ooo_del_tab1;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_del_tab1 ;
@@ -418,6 +424,9 @@ select count(*) from heap_ooo_upd_tab1 ;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_upd_tab1 ;
 set gp_select_invisible = false;
+-- start_ignore
+select * from pg_stat_activity;
+-- end_ignore
 vacuum heap_ooo_upd_tab1;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_upd_tab1 ;
