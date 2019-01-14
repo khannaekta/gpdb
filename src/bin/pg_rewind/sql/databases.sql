@@ -40,3 +40,7 @@ PGOPTIONS=${PGOPTIONS_UTILITY} $MASTER_PSQL -c "SELECT datname from pg_database"
 }
 # Run the test
 . sql/run_test.sh
+# Remove logs for passing test
+if [ $? == 0 ]; then
+  rm -rf $TESTROOT;
+fi;

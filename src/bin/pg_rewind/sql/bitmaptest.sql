@@ -77,3 +77,7 @@ PGOPTIONS=${PGOPTIONS_UTILITY} $MASTER_PSQL -c "SET enable_seqscan=off; SET opti
 
 # Run the test
 . sql/run_test.sh
+# Remove logs for passing test
+if [ $? == 0 ]; then
+  rm -rf $TESTROOT;
+fi;

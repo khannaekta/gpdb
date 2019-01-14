@@ -19,3 +19,7 @@ MASTER_PG_CTL_STOP_MODE="immediate"
 
 # Run the test
 . sql/run_test.sh
+# Remove logs for passing test
+if [ $? == 0 ]; then
+  rm -rf $TESTROOT;
+fi;
