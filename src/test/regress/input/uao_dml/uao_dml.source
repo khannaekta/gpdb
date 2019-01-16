@@ -382,9 +382,6 @@ select count(*) from heap_ooo_del_tab1 ;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_del_tab1 ;
 set gp_select_invisible = false;
--- start_ignore
-select * from pg_stat_activity;
--- end_ignore
 vacuum heap_ooo_del_tab1;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_del_tab1 ;
@@ -424,9 +421,6 @@ select count(*) from heap_ooo_upd_tab1 ;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_upd_tab1 ;
 set gp_select_invisible = false;
--- start_ignore
-select * from pg_stat_activity;
--- end_ignore
 vacuum heap_ooo_upd_tab1;
 set gp_select_invisible = true;
 select count(*) from heap_ooo_upd_tab1 ;
