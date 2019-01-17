@@ -8,7 +8,8 @@ set gp_default_storage_options='orientation=@orientation@';
 -- testing the optimizer, so just disable ORCA to work around that.
 set optimizer=off;
 -- start_ignore
-SET Debug_print_full_dtm=on;
+\! gpconfig -c Debug_print_full_dtm -v on --skipvalidation
+\! gpstop -u
 -- end_ignore
 
 -- With gp_select_invisible set true, the snapshot will be SnapshotAnyData.
@@ -1007,3 +1008,8 @@ BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
 SAVEPOINT my_savepoint;
 UPDATE foo SET b = 1 WHERE a < 4;
 ROLLBACK;
+
+-- start_ignore
+\! gpconfig -r Debug_print_full_dtm --skipvalidation
+\! gpstop -u
+-- end_ignore
