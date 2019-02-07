@@ -2733,17 +2733,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
 				}
 
-				if (lnext(l))
-				{
+//				if (lnext(l))
+//				{
 					/* Add the current WindowFuncs to the running tlist */
 					window_tlist = add_to_flat_tlist(window_tlist,
 										   wflists->windowFuncs[wc->winref]);
-				}
-				else
-				{
-					/* Install the original tlist in the topmost WindowAgg */
-					window_tlist = tlist;
-				}
+//				}
+//				else
+//				{
+//					/* Install the original tlist in the topmost WindowAgg */
+//					window_tlist = tlist;
+//				}
 
 				/* ... and make the WindowAgg plan node */
 				result_plan = (Plan *)
@@ -2764,6 +2764,16 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								   wc->startOffset,
 								   wc->endOffset,
 								   result_plan);
+				if (expression_returns_set(tlist))
+				{
+					result_plan = (Plan *) make_result(root,
+					                                   tlist,
+					                                   NULL,
+					                                   result_plan);
+
+					result_plan->flow = pull_up_Flow(result_plan,
+					                                 getAnySubplan(result_plan));
+				}
 			}
 		}
 
