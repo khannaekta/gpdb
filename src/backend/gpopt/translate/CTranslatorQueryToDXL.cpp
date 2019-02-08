@@ -3178,7 +3178,10 @@ CTranslatorQueryToDXL::NoteDistributionPolicyOpclasses
 				if (opclasses[i] == default_opclass)
 					contains_default_hashops = true;
 				else
+				{
 					contains_nondefault_hashops = true;
+					elog(LOG,"default_opclass = %d, typeoid = %d, opclasses[i] = %d", default_opclass, typeoid, opclasses[i]);
+				}
 			}
 		}
 		gpdb::CloseRelation(rel);

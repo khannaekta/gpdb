@@ -385,7 +385,10 @@ cdb_default_distribution_opclass_for_type(Oid typeoid)
 
 	opfamily = cdb_default_distribution_opfamily_for_type(typeoid);
 	if (!opfamily)
+	{
+		elog(LOG,"InvalidOid for opfamily typeoid= %d", typeoid);
 		return InvalidOid;
+	}
 
 	return GetDefaultOpClass(typeoid, HASH_AM_OID);
 }
