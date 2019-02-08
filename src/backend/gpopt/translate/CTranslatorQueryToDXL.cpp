@@ -3180,7 +3180,7 @@ CTranslatorQueryToDXL::NoteDistributionPolicyOpclasses
 				else
 				{
 					contains_nondefault_hashops = true;
-					elog(LOG,"default_opclass = %d, typeoid = %d, opclasses[i] = %d", default_opclass, typeoid, opclasses[i]);
+					elog(LOG,"default_opclass = %d, typeoid = %d, opclasses[i] = %d, i = %d, relid = %d, relkind = %d, relname=%s", default_opclass, typeoid, opclasses[i], i, rte->relid, rte->rtekind, RelationGetRelationName(rel));
 				}
 			}
 		}
