@@ -3165,7 +3165,9 @@ CTranslatorQueryToDXL::NoteDistributionPolicyOpclasses
 			Oid hashfunc;
 
 			opfamily = gpdb::GetOpclassFamily(opclasses[i]);
+			elog(LOG,"Before loop opclases[0] = %d", opclasses[i]);
 			hashfunc = gpdb::GetHashProcInOpfamily(opfamily, typeoid);
+			elog(LOG,"After GetHashProcInOpfamily() opclases[0] = %d", opclasses[i]);
 
 			if (gpdb::IsLegacyCdbHashFunction(hashfunc))
 			{
@@ -3173,14 +3175,16 @@ CTranslatorQueryToDXL::NoteDistributionPolicyOpclasses
 			}
 			else
 			{
+				elog(LOG,"After IsLegacyCdbHashFunction() opclases[0] = %d", opclasses[i]);
 				Oid default_opclass = gpdb::GetDefaultDistributionOpclassForType(typeoid);
+				elog(LOG,"After GetDefaultDistributionOpclassForType() opclases[0] = %d", opclasses[i]);
 
 				if (opclasses[i] == default_opclass)
 					contains_default_hashops = true;
 				else
 				{
 					contains_nondefault_hashops = true;
-					elog(LOG,"default_opclass = %d, typeoid = %d, opclasses[i] = %d, i = %d, relid = %d, relkind = %d, relname=%s", default_opclass, typeoid, opclasses[i], i, rte->relid, rte->rtekind, RelationGetRelationName(rel));
+					elog(PANIC,"FINDME1: default_opclass = %d, typeoid = %d, opclasses[i] = %d, i = %d, relid = %d, relkind = %d, relname=%s, opfamily= %d", default_opclass, typeoid, opclasses[i], i, rte->relid, rte->rtekind, RelationGetRelationName(rel), opfamily);
 				}
 			}
 		}
