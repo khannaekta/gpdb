@@ -3166,8 +3166,10 @@ CTranslatorQueryToDXL::NoteDistributionPolicyOpclasses
 
 			opfamily = gpdb::GetOpclassFamily(opclasses[i]);
 			elog(LOG,"Before loop opclases[0] = %d", opclasses[i]);
+			elog(LOG, "GetOpclassFamily() => opclass: %p, rd_policy_opclass: %p, policy: %p, rd_policy: %p", opclasses, rel->rd_cdbpolicy->opclasses, policy, rel->rd_cdbpolicy);
 			hashfunc = gpdb::GetHashProcInOpfamily(opfamily, typeoid);
 			elog(LOG,"After GetHashProcInOpfamily() opclases[0] = %d", opclasses[i]);
+			elog(LOG, "GetHashProcInOpfamily() => opclass: %p, rd_policy_opclass: %p, policy: %p, rd_policy: %p", opclasses, rel->rd_cdbpolicy->opclasses, policy, rel->rd_cdbpolicy);
 
 			if (gpdb::IsLegacyCdbHashFunction(hashfunc))
 			{
@@ -3176,14 +3178,18 @@ CTranslatorQueryToDXL::NoteDistributionPolicyOpclasses
 			else
 			{
 				elog(LOG,"After IsLegacyCdbHashFunction() opclases[0] = %d", opclasses[i]);
+				elog(LOG, "IsLegacyCdbHashFunction() => opclass: %p, rd_policy_opclass: %p, policy: %p, rd_policy: %p", opclasses, rel->rd_cdbpolicy->opclasses, policy, rel->rd_cdbpolicy);
+
 				Oid default_opclass = gpdb::GetDefaultDistributionOpclassForType(typeoid);
 				elog(LOG,"After GetDefaultDistributionOpclassForType() opclases[0] = %d", opclasses[i]);
+				elog(LOG, "GetDefaultDistributionOpclassForType() => opclass: %p, rd_policy_opclass: %p, policy: %p, rd_policy: %p", opclasses, rel->rd_cdbpolicy->opclasses, policy, rel->rd_cdbpolicy);
 
 				if (opclasses[i] == default_opclass)
 					contains_default_hashops = true;
 				else
 				{
 					contains_nondefault_hashops = true;
+					elog(LOG, "FINDME1PANIC => opclass: %p, rd_policy_opclass: %p, policy: %p, rd_policy: %p", opclasses, rel->rd_cdbpolicy->opclasses, policy, rel->rd_cdbpolicy);
 					elog(PANIC,"FINDME1: default_opclass = %d, typeoid = %d, opclasses[i] = %d, i = %d, relid = %d, relkind = %d, relname=%s, opfamily= %d", default_opclass, typeoid, opclasses[i], i, rte->relid, rte->rtekind, RelationGetRelationName(rel), opfamily);
 				}
 			}
