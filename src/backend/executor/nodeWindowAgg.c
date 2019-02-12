@@ -1980,8 +1980,7 @@ ExecWindowAgg(WindowAggState *winstate)
 	 * output tuple (because there is a function-returning-set in the
 	 * projection expressions).  If so, try to project another one.
 	 */
-#if 0
-	if (winstate->ss.ps.ps_TupFromTlist)
+	if (winstate->ps_TupFromTlist)
 	{
 		TupleTableSlot *result;
 		ExprDoneCond isDone;
@@ -1990,9 +1989,9 @@ ExecWindowAgg(WindowAggState *winstate)
 		if (isDone == ExprMultipleResult)
 			return result;
 		/* Done with that source tuple... */
-		winstate->ss.ps.ps_TupFromTlist = false;
+		winstate->ps_TupFromTlist = false;
 	}
-#endif
+
 
 restart:
 	if (winstate->buffer == NULL)
@@ -2107,10 +2106,8 @@ restart:
 		goto restart;
 	}
 
-#if 0
-	winstate->ss.ps.ps_TupFromTlist =
+	winstate->ps_TupFromTlist =
 		(isDone == ExprMultipleResult);
-#endif
 
 	return result;
 }
@@ -2226,9 +2223,9 @@ ExecInitWindowAgg(WindowAgg *node, EState *estate, int eflags)
 	ExecAssignResultTypeFromTL(&winstate->ss.ps);
 	ExecAssignProjectionInfo(&winstate->ss.ps, NULL);
 
-#if 0
-	winstate->ss.ps.ps_TupFromTlist = false;
-#endif
+//#if 0
+	winstate->ps_TupFromTlist = false;
+//#endif
 
 	/* Set up data for comparing tuples */
 	if (node->partNumCols > 0)
@@ -2609,9 +2606,9 @@ ExecReScanWindowAgg(WindowAggState *node)
 
 	node->all_done = false;
 
-#if 0
-	node->ss.ps.ps_TupFromTlist = false;
-#endif
+//#if 0
+	node->ps_TupFromTlist = false;
+//#endif
 	node->all_first = true;
 
 	/* release tuplestore et al */
