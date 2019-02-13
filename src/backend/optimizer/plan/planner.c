@@ -1804,6 +1804,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		bool		use_hashed_grouping = false;
 		WindowFuncLists *wflists = NULL;
 		List	   *activeWindows = NIL;
+		List	   *window_result_list = NIL;
 		bool		grpext = false;
 		CanonicalGroupingSets *canonical_grpsets;
 
@@ -1837,7 +1838,10 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 			wflists = find_window_functions((Node *) tlist,
 											list_length(parse->windowClause));
 			if (wflists->numWindowFuncs > 0)
-				activeWindows = select_active_windows(root, wflists);
+			{
+				activeWindows      = select_active_windows(root, wflists);
+				window_result_list = list_difference(tlist, *wflists->windowFuncs);
+			}
 			else
 				parse->hasWindowFuncs = false;
 		}
@@ -2733,17 +2737,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
 				}
 
-				if (lnext(l))
-				{
+//				if (lnext(l))
+//				{
 					/* Add the current WindowFuncs to the running tlist */
 					window_tlist = add_to_flat_tlist(window_tlist,
 										   wflists->windowFuncs[wc->winref]);
-				}
-				else
-				{
-					/* Install the original tlist in the topmost WindowAgg */
-					window_tlist = tlist;
-				}
+//				}
+//				else
+//				{
+//					/* Install the original tlist in the topmost WindowAgg */
+//					window_tlist = tlist;
+//				}
 
 				/* ... and make the WindowAgg plan node */
 				result_plan = (Plan *)
@@ -2764,6 +2768,17 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								   wc->startOffset,
 								   wc->endOffset,
 								   result_plan);
+
+				if(window_result_list)
+				{
+					result_plan = (Plan *) make_result(root,
+					                                   window_result_list,
+					                                   NULL,
+					                                   result_plan);
+
+					result_plan->flow = pull_up_Flow(result_plan,
+					                                 getAnySubplan(result_plan));
+				}
 			}
 		}
 
