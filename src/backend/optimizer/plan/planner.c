@@ -2733,6 +2733,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
 				}
 
+				bool contains_srf = false;
+				List *srf_tlist = NIL;
 				if (lnext(l))
 				{
 					/* Add the current WindowFuncs to the running tlist */
@@ -2741,8 +2743,27 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				}
 				else
 				{
+					if (expression_returns_set((Node *) tlist))
+					{
+						contains_srf = true;
+						// take out the srf from the plan->targetlist
+						ListCell *lc;
+						foreach(lc, tlist)
+						{
+							TargetEntry *tle = (TargetEntry *) lfirst(lc);
+							if (expression_returns_set((Node *)tle->expr))
+							{
+								srf_tlist = lappend(srf_tlist, tle);
+							}
+						}
+						tlist = list_difference(tlist, srf_tlist); // windowFunc + var b + var a
+					}
 					/* Install the original tlist in the topmost WindowAgg */
+					List *varno_list = flatten_tlist(srf_tlist,PVC_RECURSE_AGGREGATES,PVC_INCLUDE_PLACEHOLDERS);
 					window_tlist = tlist;
+					ListCell *l;
+					foreach(l, varno_list)
+						window_tlist = lappend(window_tlist, lfirst(l));
 				}
 
 				/* ... and make the WindowAgg plan node */
@@ -2764,6 +2785,18 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								   wc->startOffset,
 								   wc->endOffset,
 								   result_plan);
+				// If we have SRF in Tlist
+				if (contains_srf)
+				{
+					TargetEntry *tle = linitial(window_tlist);
+					Var *outer_var = makeVarFromTargetEntry(OUTER_VAR, tle);
+					srf_tlist = lappend(srf_tlist, makeTargetEntry((Expr *) outer_var, outer_var->varattno,(tle->resname == NULL) ? NULL : pstrdup(tle->resname),tle->resjunk));
+					result_plan = (Plan *) make_result(root, srf_tlist, NULL, result_plan);
+					result_plan->flow = pull_up_Flow(result_plan,
+					                                 getAnySubplan(result_plan));
+				}
+				// split the tlist => window_tlist and srf_tlist
+				// make result node with srf_tlist
 			}
 		}
 

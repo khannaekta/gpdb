@@ -970,9 +970,41 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			break;
 		case T_WindowAgg:
 			{
+//				if (cdb_expr_requires_full_eval((Node *)plan->targetlist))
+//				{
+//					List *result_tlist = NIL;
+//					// take out the srf from the plan->targetlist
+//					ListCell *lc;
+//					foreach(lc, plan->targetlist)
+//					{
+//						TargetEntry *tle = (TargetEntry *) lfirst(lc);
+//						if (expression_returns_set((Node *)tle->expr))
+//							result_tlist = lappend(result_tlist, tle); // srf
+//					}
+//					plan->targetlist = list_difference(plan->targetlist, result_tlist); // windowFunc + var
+//					Flow *flow = plan->flow;
+//					plan->flow = NULL;
+//					Plan *resultplan = (Plan *) make_result(NULL, result_tlist, NULL, plan);
+//					/* Fix up the Result node and the Plan tree below it. */
+//					resultplan = set_plan_refs(root, resultplan, rtoffset);
+//					resultplan->flow = flow;
+//					plan->flow = flow;
+//					// add the srf to resultplan->targetlist and plan->targetlist should have WindowFunc
+////					foreach(lc, resultplan->targetlist)
+////					{
+////						TargetEntry *tle = (TargetEntry *) lfirst(lc);
+////						if (!IsA(tle->expr, WindowFunc))
+////							result_tlist = lappend(result_tlist, tle);
+////					}
+////					resultplan->targetlist = result_tlist;
+////					resultplan->targetlist = flatten_tlist(resultplan->targetlist,
+////					                                       PVC_RECURSE_AGGREGATES,
+////					                                       PVC_INCLUDE_PLACEHOLDERS);
+//					//resultplan->lefttree->targetlist = lappend(resultplan->lefttree->targetlist, window_agg_tlist);
+//					return resultplan;
+//				}
 				WindowAgg  *wplan = (WindowAgg *) plan;
 				indexed_tlist  *subplan_itlist;
-
 				set_upper_references(root, plan, rtoffset);
 
 				if ( plan->targetlist == NIL )
