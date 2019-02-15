@@ -970,42 +970,66 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			break;
 		case T_WindowAgg:
 			{
-//				if (cdb_expr_requires_full_eval((Node *)plan->targetlist))
-//				{
-//					List *result_tlist = NIL;
-//					// take out the srf from the plan->targetlist
-//					ListCell *lc;
-//					foreach(lc, plan->targetlist)
+				List *srf_tlist = NIL;
+				if (cdb_expr_requires_full_eval((Node *)plan->targetlist))
+				{
+					// take out the srf from the plan->targetlist
+					ListCell *lc;
+					foreach(lc, plan->targetlist)
+					{
+						TargetEntry *tle = (TargetEntry *) lfirst(lc);
+						if (expression_returns_set((Node *)tle->expr))
+							srf_tlist = lappend(srf_tlist, tle); // srf
+					}
+					plan->targetlist = list_difference(plan->targetlist, srf_tlist); // windowFunc + var
+
+//					plan->flow = NULL;
+//					int i = 1;
+//					List *window_tlist = plan->targetlist;
+//					foreach(lc, window_tlist)
+//					{
+//						TargetEntry *tle = lfirst(lc);
+//
+//						if(IsA(tle->expr, WindowFunc))
+//						{
+//							Var *outer_var = makeVar(OUTER_VAR,
+//								i,
+//								exprType((Node *) tle->expr),
+//								exprTypmod((Node *) tle->expr),
+//								exprCollation((Node *) tle->expr),
+//								0);
+//							srf_tlist = lappend(srf_tlist,
+//							                    makeTargetEntry((Expr *) outer_var,
+//							                                    outer_var->varattno,
+//							                                    (tle->resname ==
+//								                                    NULL) ? NULL
+//							                                              : pstrdup(
+//								                                    tle->resname),
+//							                                    tle->resjunk));
+//						}
+//						i++;
+//					}
+					// add the srf to resultplan->targetlist and plan->targetlist should have WindowFunc
+//					foreach(lc, resultplan->targetlist)
 //					{
 //						TargetEntry *tle = (TargetEntry *) lfirst(lc);
-//						if (expression_returns_set((Node *)tle->expr))
-//							result_tlist = lappend(result_tlist, tle); // srf
+//						if (!IsA(tle->expr, WindowFunc))
+//							result_tlist = lappend(result_tlist, tle);
 //					}
-//					plan->targetlist = list_difference(plan->targetlist, result_tlist); // windowFunc + var
-//					Flow *flow = plan->flow;
-//					plan->flow = NULL;
-//					Plan *resultplan = (Plan *) make_result(NULL, result_tlist, NULL, plan);
-//					/* Fix up the Result node and the Plan tree below it. */
-//					resultplan = set_plan_refs(root, resultplan, rtoffset);
-//					resultplan->flow = flow;
-//					plan->flow = flow;
-//					// add the srf to resultplan->targetlist and plan->targetlist should have WindowFunc
-////					foreach(lc, resultplan->targetlist)
-////					{
-////						TargetEntry *tle = (TargetEntry *) lfirst(lc);
-////						if (!IsA(tle->expr, WindowFunc))
-////							result_tlist = lappend(result_tlist, tle);
-////					}
-////					resultplan->targetlist = result_tlist;
-////					resultplan->targetlist = flatten_tlist(resultplan->targetlist,
-////					                                       PVC_RECURSE_AGGREGATES,
-////					                                       PVC_INCLUDE_PLACEHOLDERS);
-//					//resultplan->lefttree->targetlist = lappend(resultplan->lefttree->targetlist, window_agg_tlist);
-//					return resultplan;
-//				}
+//					resultplan->targetlist = result_tlist;
+//					resultplan->targetlist = flatten_tlist(resultplan->targetlist,
+//					                                       PVC_RECURSE_AGGREGATES,
+//					                                       PVC_INCLUDE_PLACEHOLDERS);
+					//resultplan->lefttree->targetlist = lappend(resultplan->lefttree->targetlist, window_agg_tlist);
+				}
 				WindowAgg  *wplan = (WindowAgg *) plan;
 				indexed_tlist  *subplan_itlist;
 				set_upper_references(root, plan, rtoffset);
+				List *flatten_srf_list = flatten_tlist(srf_tlist,PVC_RECURSE_AGGREGATES,
+				                                       PVC_INCLUDE_PLACEHOLDERS);
+				ListCell *lc;
+				foreach(lc, flatten_srf_list)
+					plan->targetlist = lappend(plan->targetlist, lfirst(lc)); // windowFunc + var + var for srf
 
 				if ( plan->targetlist == NIL )
 					set_dummy_tlist_references(plan, rtoffset);
@@ -1028,6 +1052,47 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 									   subplan_itlist, OUTER_VAR, rtoffset);
 					pfree(subplan_itlist);
 				}
+				if (srf_tlist)
+				{
+					Flow *flow = plan->flow;
+					plan->flow = NULL;
+					ListCell *lc;
+					int i = 1;
+					foreach(lc, plan->targetlist)
+					{
+						TargetEntry *tle = lfirst(lc);
+
+						if(IsA(tle->expr, WindowFunc))
+						{
+							Var *outer_var = makeVar(OUTER_VAR,
+								i,
+								exprType((Node *) tle->expr),
+								exprTypmod((Node *) tle->expr),
+								exprCollation((Node *) tle->expr),
+								0);
+							srf_tlist = lappend(srf_tlist,
+							                    makeTargetEntry((Expr *) outer_var,
+							                                    outer_var->varattno,
+							                                    (tle->resname ==
+								                                    NULL) ? NULL
+							                                              : pstrdup(
+								                                    tle->resname),
+							                                    tle->resjunk));
+						}
+						i++;
+					}
+					Plan *resultplan = (Plan *) make_result(root, srf_tlist, NULL, plan);
+					/* Fix up the Result node and the Plan tree below it. */
+//					set_upper_references(root, resultplan, rtoffset);
+//					fix_upper_expr(root, )
+//					set_plan_refs(root, resultplan, rtoffset);
+					resultplan->flow = flow;
+					plan->flow = flow;
+					plan = resultplan;
+					return plan;
+				}
+				//checksrf tlist
+				// then make resultNode
 			}
 			break;
 		case T_Result:

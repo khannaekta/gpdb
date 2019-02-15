@@ -2733,7 +2733,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						(Plan *) make_motion_gather_to_QE(root, result_plan, current_pathkeys);
 				}
 
-				bool contains_srf = false;
+				//bool contains_srf = false;
 				List *srf_tlist = NIL;
 				if (lnext(l))
 				{
@@ -2743,28 +2743,30 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 				}
 				else
 				{
-					if (expression_returns_set((Node *) tlist))
-					{
-						contains_srf = true;
-						// take out the srf from the plan->targetlist
-						ListCell *lc;
-						foreach(lc, tlist)
-						{
-							TargetEntry *tle = (TargetEntry *) lfirst(lc);
-							if (expression_returns_set((Node *)tle->expr))
-							{
-								srf_tlist = lappend(srf_tlist, tle);
-							}
-						}
-						tlist = list_difference(tlist, srf_tlist); // windowFunc + var b + var a
-					}
-					/* Install the original tlist in the topmost WindowAgg */
-					List *varno_list = flatten_tlist(srf_tlist,PVC_RECURSE_AGGREGATES,PVC_INCLUDE_PLACEHOLDERS);
 					window_tlist = tlist;
-					ListCell *l;
-					foreach(l, varno_list)
-						window_tlist = lappend(window_tlist, lfirst(l));
 				}
+//					if (expression_returns_set((Node *) tlist))
+//					{
+//						contains_srf = true;
+//						// take out the srf from the plan->targetlist
+//						ListCell *lc;
+//						foreach(lc, tlist)
+//						{
+//							TargetEntry *tle = (TargetEntry *) lfirst(lc);
+//							if (expression_returns_set((Node *)tle->expr))
+//							{
+//								srf_tlist = lappend(srf_tlist, tle);
+//							}
+//						}
+//						tlist = list_difference(tlist, srf_tlist); // windowFunc + var b + var a
+//					}
+//					/* Install the original tlist in the topmost WindowAgg */
+//					List *varno_list = flatten_tlist(srf_tlist,PVC_RECURSE_AGGREGATES,PVC_INCLUDE_PLACEHOLDERS);
+//					window_tlist = tlist;
+//					ListCell *l;
+//					foreach(l, varno_list)
+//						window_tlist = lappend(window_tlist, lfirst(l));
+//				}
 
 				/* ... and make the WindowAgg plan node */
 				result_plan = (Plan *)
@@ -2786,15 +2788,37 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 								   wc->endOffset,
 								   result_plan);
 				// If we have SRF in Tlist
-				if (contains_srf)
-				{
-					TargetEntry *tle = linitial(window_tlist);
-					Var *outer_var = makeVarFromTargetEntry(OUTER_VAR, tle);
-					srf_tlist = lappend(srf_tlist, makeTargetEntry((Expr *) outer_var, outer_var->varattno,(tle->resname == NULL) ? NULL : pstrdup(tle->resname),tle->resjunk));
-					result_plan = (Plan *) make_result(root, srf_tlist, NULL, result_plan);
-					result_plan->flow = pull_up_Flow(result_plan,
-					                                 getAnySubplan(result_plan));
-				}
+//				if (contains_srf)
+//				{
+//					ListCell *lc;
+//					int i = 1;
+//					foreach(lc, window_tlist)
+//					{
+//						TargetEntry *tle = lfirst(lc);
+//
+//						if(IsA(tle->expr, WindowFunc))
+//						{
+//							Var *outer_var = makeVar(OUTER_VAR,
+//								i,
+//								exprType((Node *) tle->expr),
+//								exprTypmod((Node *) tle->expr),
+//								exprCollation((Node *) tle->expr),
+//								0);
+//							srf_tlist = lappend(srf_tlist,
+//							                    makeTargetEntry((Expr *) outer_var,
+//							                                    outer_var->varattno,
+//							                                    (tle->resname ==
+//								                                    NULL) ? NULL
+//							                                              : pstrdup(
+//								                                    tle->resname),
+//							                                    tle->resjunk));
+//						}
+//						i++;
+//					}
+//					result_plan = (Plan *) make_result(root, srf_tlist, NULL, result_plan);
+//					result_plan->flow = pull_up_Flow(result_plan,
+//					                                 getAnySubplan(result_plan));
+//				}
 				// split the tlist => window_tlist and srf_tlist
 				// make result node with srf_tlist
 			}
