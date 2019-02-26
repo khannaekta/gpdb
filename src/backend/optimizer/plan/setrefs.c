@@ -972,6 +972,48 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			{
 				WindowAgg  *wplan = (WindowAgg *) plan;
 				indexed_tlist  *subplan_itlist;
+				List *srf_tlist = NIL;
+                Plan *result_plan = NULL;
+				if (cdb_expr_requires_full_eval((Node *)plan->targetlist))
+				{
+					ListCell *lc;
+					foreach(lc, plan->targetlist)
+					{
+						TargetEntry *tle = (TargetEntry *) lfirst(lc);
+						if (expression_returns_set((Node *)tle->expr))
+							srf_tlist = lappend(srf_tlist, tle); // srf
+					}
+                    plan->targetlist = list_difference(plan->targetlist, srf_tlist);
+                    List *flatten_srf_list = flatten_tlist(srf_tlist,PVC_RECURSE_AGGREGATES,
+                                                           PVC_INCLUDE_PLACEHOLDERS);
+                    foreach(lc, flatten_srf_list)
+                        plan->targetlist = lappend(plan->targetlist, lfirst(lc));
+//                    plan->targetlist = lappend(plan->targetlist, flatten_srf_list); // windowFunc + var
+                    int i=1;
+                    foreach(lc, plan->targetlist)
+					{
+						TargetEntry *tle = lfirst(lc);
+
+						if(IsA(tle->expr, WindowFunc))
+						{
+							Var *outer_var = makeVarFromTargetEntry(i, tle);
+                            srf_tlist = lappend(srf_tlist,
+							                    makeTargetEntry((Expr *) outer_var,
+							                                    outer_var->varattno,
+							                                    (tle->resname ==
+								                                    NULL) ? NULL
+							                                              : pstrdup(
+								                                    tle->resname),
+							                                    tle->resjunk));
+						}
+						i++;
+					}
+                    if(srf_tlist)
+				    {
+					    result_plan = (Plan *) make_result(root, srf_tlist, NULL, plan);
+					    set_upper_references(root, result_plan, rtoffset);
+				    }
+				}
 
 				set_upper_references(root, plan, rtoffset);
 
@@ -996,6 +1038,16 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 									   subplan_itlist, OUTER_VAR, rtoffset);
 					pfree(subplan_itlist);
 				}
+				if(srf_tlist)
+                {
+				    Flow *flow = plan->flow;
+                    plan->flow = NULL;
+                    plan->lefttree = set_plan_refs(root, plan->lefttree, rtoffset);
+                    plan->righttree = set_plan_refs(root, plan->righttree, rtoffset);
+                    plan->flow = flow;
+                    result_plan->flow = flow;
+                    return result_plan;
+                }
 			}
 			break;
 		case T_Result:
