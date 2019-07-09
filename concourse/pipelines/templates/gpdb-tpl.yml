@@ -3623,7 +3623,8 @@ jobs:
     file: madlib_ci/concourse/tasks/madlib_test_gppkg.yml
     image: centos-gpdb-dev-[[ platform_version ]]
     params:
-      TEST_OS: centos
+      TEST_OS: centos[[ platform_version ]]
+      DBVER: gpdb5
       ORCA: "[[ orca_state ]]"
 
 - name: Postgis_Test_[[ test_name ]]
