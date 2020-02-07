@@ -1782,7 +1782,8 @@ ExecuteTruncate(TruncateStmt *stmt)
 		 * table or the current physical file to be thrown away anyway.
 		 */
 		if (rel->rd_createSubid == mySubid ||
-			rel->rd_newRelfilenodeSubid == mySubid)
+			rel->rd_newRelfilenodeSubid == mySubid ||
+			trial_perform_unsafe_truncate)
 		{
 			/* Immediate, non-rollbackable truncation is OK */
 			heap_truncate_one_rel(rel);
