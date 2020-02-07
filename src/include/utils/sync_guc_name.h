@@ -3,6 +3,7 @@
 		"commit_siblings",
 		"coredump_on_memerror",
 		"DateStyle",
+		"debug_trial_do_unsafe_truncate",
 		"default_tablespace",
 		"dml_ignore_target_partition_check",
 		"dtx_phase2_retry_count",

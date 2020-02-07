@@ -102,6 +102,7 @@ List	   *gp_guc_list_for_no_plan;
 
 char	   *Debug_dtm_action_sql_command_tag;
 
+bool		trial_perform_unsafe_truncate = false;
 bool		Debug_print_full_dtm = false;
 bool		Debug_print_snapshot_dtm = false;
 bool		Debug_disable_distributed_snapshot = false;
@@ -1205,6 +1206,17 @@ struct config_bool ConfigureNamesBool_gp[] =
 			GUC_NO_SHOW_ALL
 		},
 		&gp_debug_resqueue_priority,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"debug_trial_do_unsafe_truncate", PGC_SUSET, DEVELOPER_OPTIONS,
+			gettext_noop("Picks unsafe truncate in-place of safe truncate."),
+			NULL,
+			GUC_SUPERUSER_ONLY | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&trial_perform_unsafe_truncate,
 		false,
 		NULL, NULL, NULL
 	},

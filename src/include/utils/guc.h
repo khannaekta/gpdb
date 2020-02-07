@@ -235,6 +235,7 @@ extern bool Debug_print_parse;
 extern bool Debug_print_rewritten;
 extern bool Debug_pretty_print;
 
+extern bool trial_perform_unsafe_truncate;
 extern bool	Debug_print_full_dtm;
 extern bool	Debug_print_snapshot_dtm;
 extern bool Debug_disable_distributed_snapshot;
