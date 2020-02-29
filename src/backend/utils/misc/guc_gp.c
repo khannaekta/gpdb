@@ -289,6 +289,7 @@ bool		gp_log_dynamic_partition_pruning = false;
 bool		gp_cte_sharing = false;
 bool		gp_enable_relsize_collection = false;
 bool		gp_recursive_cte = true;
+bool		gp_enable_constant_expression_evaluation = true;
 
 /* Optimizer related gucs */
 bool		optimizer;
@@ -1963,6 +1964,17 @@ struct config_bool ConfigureNamesBool_gp[] =
 		},
 		&gp_recursive_cte,
 		true, NULL, NULL
+	},
+
+	{
+		{"gp_enable_constant_expression_evaluation", PGC_SUSET, QUERY_TUNING_OTHER,
+		 gettext_noop("Enable constant expression evaluation."),
+		 NULL,
+		 GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE
+		},
+		&gp_enable_constant_expression_evaluation,
+		true,
+		NULL, NULL, NULL
 	},
 
 	{

@@ -72,6 +72,7 @@
 		"gp_workfile_compression",
 		"gp_workfile_limit_files_per_query",
 		"gp_workfile_limit_per_query",
+		"gp_enable_constant_expression_evaluation",
 		"IntervalStyle",
 		"lc_numeric",
 		"log_dispatch_stats",

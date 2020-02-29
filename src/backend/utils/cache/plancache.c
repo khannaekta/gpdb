@@ -1015,6 +1015,9 @@ choose_custom_plan(CachedPlanSource *plansource, ParamListInfo boundParams, Into
 {
 	double		avg_custom_cost;
 
+	if (!gp_enable_constant_expression_evaluation)
+		return false;
+
 	/* Force to replan for CTAS */
 	if (intoClause != NULL)
 		return true;
