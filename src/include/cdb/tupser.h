@@ -81,11 +81,14 @@ extern void SerializeRecordCacheIntoChunks(SerTupInfo *pSerInfo,
 										   TupleChunkList tcList,
 										   MotionConn *conn);
 
-/* Convert a tuple into chunks directly in a set of transport buffers */
+/* Convert a HeapTuple into chunks directly in a set of transport buffers */
 extern int SerializeTuple(TupleTableSlot *tuple, SerTupInfo *pSerInfo, struct directTransportBuffer *b, TupleChunkList tcList, int16 targetRoute);
 
+/* Deserialize a HeapTuple's data from a byte-array. */
+extern HeapTuple DeserializeTuple(SerTupInfo * pSerInfo, StringInfo serialTup);
+
 /* Convert a sequence of chunks containing serialized tuple data into a
- * HeapTuple or MemTuple.
+ * HeapTuple.
  */
 extern GenericTuple CvtChunksToTup(TupleChunkList tclist, SerTupInfo * pSerInfo, TupleRemapper *remapper);
 
