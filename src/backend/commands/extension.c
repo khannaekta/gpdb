@@ -3029,6 +3029,12 @@ ApplyExtensionUpdates(Oid extensionOid,
 									 oldVersionName, versionName,
 									 requiredSchemas,
 									 schemaName, schemaOid);
+			/*
+			 * Update prior-version name and loop around.  Since
+			 * execute_sql_string did a final CommandCounterIncrement, we can
+			 * update the pg_extension row again.
+			 */
+			oldVersionName = versionName;
 		}
 		else
 		{
@@ -3040,13 +3046,6 @@ ApplyExtensionUpdates(Oid extensionOid,
 			elog(INFO, "oldvername = %s, vername = %s", oldVersionName,versionName );
 			break;
 		}
-
-		/*
-		 * Update prior-version name and loop around.  Since
-		 * execute_sql_string did a final CommandCounterIncrement, we can
-		 * update the pg_extension row again.
-		 */
-		oldVersionName = versionName;
 	}
 }
 
