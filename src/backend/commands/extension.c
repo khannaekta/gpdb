@@ -3044,7 +3044,7 @@ ApplyExtensionUpdates(Oid extensionOid,
 			CurrentExtensionObject = extensionOid;
 			/* break */
 			elog(INFO, "oldvername = %s, vername = %s", oldVersionName,versionName );
-			break;
+//			break;
 		}
 	}
 }
