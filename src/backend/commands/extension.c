@@ -3037,6 +3037,8 @@ ApplyExtensionUpdates(Oid extensionOid,
 			creating_extension = true;
 			CurrentExtensionObject = extensionOid;
 			/* break */
+			elog(INFO, "oldvername = %s, vername = %s", oldVersionName,versionName );
+			break;
 		}
 
 		/*
