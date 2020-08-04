@@ -2833,7 +2833,7 @@ ExecAlterExtensionStmt(AlterExtensionStmt *stmt)
 	/*
 	 * If we're already at that version, just say so
 	 */
-	if (strcmp(oldVersionName, versionName) == 0)
+	if (Gp_role == GP_ROLE_EXECUTE && strcmp(oldVersionName, versionName) == 0)
 	{
 		ereport(NOTICE,
 		   (errmsg("version \"%s\" of extension \"%s\" is already installed",
