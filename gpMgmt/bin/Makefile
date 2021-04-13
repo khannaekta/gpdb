@@ -31,6 +31,7 @@ installprograms: installdirs
 		fi; \
 		$(PERL) $(top_builddir)/putversion '$(DESTDIR)$(bindir)/'$$file ; \
 	done
+	$(INSTALL_SCRIPT) gpload.py '$(DESTDIR)$(bindir)/gpload.py'
 	# Symlink gpcheckcat from bin to bin/lib to maintain backward compatibility
 	if [ ! -L $(DESTDIR)$(bindir)/lib/gpcheckcat  ]; then \
 		cd $(DESTDIR)$(bindir)/lib/ && $(LN_S) ../gpcheckcat gpcheckcat; \
