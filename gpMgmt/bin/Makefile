@@ -24,7 +24,11 @@ installdirs:
 installprograms: installdirs
 	for file in $(PROGRAMS); do \
 		pyinstaller --onefile $$file; \
-		$(INSTALL_SCRIPT) dist/$$file '$(DESTDIR)$(bindir)/'$$file ; \
+		if [ $? == 0 ]; then \
+			$(INSTALL_SCRIPT) dist/$$file '$(DESTDIR)$(bindir)/'$$file ; \
+		else \
+			$(INSTALL_SCRIPT) $$file '$(DESTDIR)$(bindir)/'$$file ; \
+		fi; \
 		$(PERL) $(top_builddir)/putversion '$(DESTDIR)$(bindir)/'$$file ; \
 	done
 	# Symlink gpcheckcat from bin to bin/lib to maintain backward compatibility
