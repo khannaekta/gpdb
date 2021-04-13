@@ -68,6 +68,7 @@ function install_libuv() {
 function install_deps_for_centos_or_sles() {
   rpm -i libquicklz-installer/libquicklz-*.rpm
   rpm -i libquicklz-devel-installer/libquicklz-*.rpm
+  pip3 install pyinstaller
 }
 
 function install_deps_for_ubuntu() {
