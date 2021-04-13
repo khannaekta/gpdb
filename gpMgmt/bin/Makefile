@@ -24,7 +24,7 @@ installdirs:
 installprograms: installdirs
 	for file in $(PROGRAMS); do \
 		pyinstaller --onefile $$file; \
-		if [ $? == 0 ]; then \
+		if [ $$? == 0 ]; then \
 			$(INSTALL_SCRIPT) dist/$$file '$(DESTDIR)$(bindir)/'$$file ; \
 		else \
 			$(INSTALL_SCRIPT) $$file '$(DESTDIR)$(bindir)/'$$file ; \
