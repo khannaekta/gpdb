@@ -68,6 +68,8 @@ function install_libuv() {
 function install_deps_for_centos_or_sles() {
   rpm -i libquicklz-installer/libquicklz-*.rpm
   rpm -i libquicklz-devel-installer/libquicklz-*.rpm
+  mkdir /tmp/pydeps
+  pip3 install --target=/tmp/pydeps -r ${GPDB_SRC_PATH}/python-dependencies.txt
   pip3 install pyinstaller
 }
 
