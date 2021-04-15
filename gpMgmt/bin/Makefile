@@ -23,7 +23,7 @@ installdirs:
 
 installprograms: installdirs
 	for file in $(PROGRAMS); do \
-		pyinstaller --paths=/tmp/pydeps/ --onefile $$file; \
+		pyinstaller --paths=/tmp/pydeps/:lib:gppylib --onefile $$file; \
 		if [ $$? == 0 ]; then \
 			$(INSTALL_SCRIPT) dist/$$file '$(DESTDIR)$(bindir)/'$$file ; \
 		else \
