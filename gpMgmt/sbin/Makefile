@@ -16,7 +16,12 @@ installdirs:
 
 install: installdirs
 	for file in $(PROGRAMS); do \
-		$(INSTALL_SCRIPT) $$file '$(DESTDIR)$(sbindir)/'$$file ; \
+		pyinstaller --paths=/tmp/pydeps/:lib:../bin/gppylib --onefile $$file; \
+		if [ $$? == 0 ]; then \
+			$(INSTALL_SCRIPT) dist/$$file '$(DESTDIR)$(sbindir)/'$$file ; \
+		else \
+			$(INSTALL_SCRIPT) $$file '$(DESTDIR)$(sbindir)/'$$file ; \
+		fi; \
 		$(PERL) $(top_builddir)/putversion '$(DESTDIR)$(sbindir)/'$$file ; \
 	done
 
