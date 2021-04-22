@@ -797,7 +797,7 @@ resources:
     uri: {{madlib-ci-git-remote}}
     private_key: {{madlib-ci-git-key}}
 
-- name: madlib_gppkg
+- name: madlib_gppkg_centos6
   type: s3
   source:
     access_key_id: {{bucket-access-key-id}}
@@ -805,6 +805,15 @@ resources:
     region_name: {{aws-region}}
     secret_access_key: {{bucket-secret-access-key}}
     regexp: release/gpdb5/madlib-(.*)-gp5-rhel6-x86_64.gppkg
+
+- name: madlib_gppkg_centos7
+  type: s3
+  source:
+    access_key_id: {{bucket-access-key-id}}
+    bucket: madlib-concourse
+    region_name: {{aws-region}}
+    secret_access_key: {{bucket-secret-access-key}}
+    regexp: release/gpdb5/madlib-(.*)-gp5-rhel7-x86_64.gppkg
 
 - name: gcc_4.4.2_snowflake
   type: s3
@@ -3473,6 +3482,7 @@ jobs:
       - gate_advanced_analytics_start
     - get: centos-gpdb-dev-[[ platform_version ]]
     - get: madlib_gppkg
+      resource: madlib_gppkg_centos[[ platform_version ]]
   - task: MADlib_Test_gppkg
     file: madlib_ci/concourse/tasks/madlib_test_gppkg.yml
     image: centos-gpdb-dev-[[ platform_version ]]
