@@ -193,7 +193,7 @@ CEnumeratorConfig::InitCostDistrSize()
 	m_dStep = CDouble(dMax / 100.0);
 
 	// compute target distribution size
-	m_ulDistrSize = (ULONG)(floor(dMax / m_dStep.Get()) + 1.0);
+	m_ulDistrSize = (ULONG) (floor(dMax / m_dStep.Get()) + 1.0);
 }
 
 

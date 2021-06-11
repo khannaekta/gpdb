@@ -6752,7 +6752,7 @@ CTranslatorExprToDXL::PdxlnScBooleanTest(CExpression *pexprScBooleanTest)
 	CScalarBooleanTest *popBoolTest =
 		CScalarBooleanTest::PopConvert(pexprScBooleanTest->Pop());
 	EdxlBooleanTestType edxlbooltest =
-		(EdxlBooleanTestType)(rgulBoolTestMapping[popBoolTest->Ebt()][1]);
+		(EdxlBooleanTestType) (rgulBoolTestMapping[popBoolTest->Ebt()][1]);
 	CDXLNode *pdxlnScBooleanTest = GPOS_NEW(m_mp) CDXLNode(
 		m_mp, GPOS_NEW(m_mp) CDXLScalarBooleanTest(m_mp, edxlbooltest));
 
@@ -7033,14 +7033,14 @@ CTranslatorExprToDXL::GetWindowFrame(CWindowFrame *pwf)
 		{CWindowFrame::EfseMatchingOthers, EdxlfesGroup},
 		{CWindowFrame::EfesTies, EdxlfesTies}};
 
-	EdxlFrameSpec edxlfs = (EdxlFrameSpec)(rgulSpecMapping[pwf->Efs()][1]);
+	EdxlFrameSpec edxlfs = (EdxlFrameSpec) (rgulSpecMapping[pwf->Efs()][1]);
 	EdxlFrameBoundary edxlfbLeading =
-		(EdxlFrameBoundary)(rgulBoundaryMapping[pwf->EfbLeading()][1]);
+		(EdxlFrameBoundary) (rgulBoundaryMapping[pwf->EfbLeading()][1]);
 	EdxlFrameBoundary edxlfbTrailing =
-		(EdxlFrameBoundary)(rgulBoundaryMapping[pwf->EfbTrailing()][1]);
+		(EdxlFrameBoundary) (rgulBoundaryMapping[pwf->EfbTrailing()][1]);
 	EdxlFrameExclusionStrategy frame_exc_strategy =
-		(EdxlFrameExclusionStrategy)(
-			rgulExclusionStrategyMapping[pwf->Efes()][1]);
+		(EdxlFrameExclusionStrategy) (rgulExclusionStrategyMapping[pwf->Efes()]
+																  [1]);
 
 	// translate scalar expressions representing leading and trailing frame edges
 	CDXLNode *pdxlnLeading = GPOS_NEW(m_mp)

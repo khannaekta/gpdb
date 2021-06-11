@@ -66,8 +66,8 @@ class CDXLMemoryManager;
 class CDXLDatum;
 
 // shorthand for functions for translating a DXL datum
-typedef CDXLDatum *(PfPdxldatum)(CDXLMemoryManager *, const Attributes &,
-								 Edxltoken, IMDId *, BOOL);
+typedef CDXLDatum *(PfPdxldatum) (CDXLMemoryManager *, const Attributes &,
+								  Edxltoken, IMDId *, BOOL);
 
 //---------------------------------------------------------------------------
 //	@class:

@@ -190,7 +190,7 @@ public:
 		{
 			// resize at least by 4 elements or percentage as given by ulExp
 			ULONG new_size =
-				(ULONG)(m_capacity * (1 + (m_expansion_factor / 100.0)));
+				(ULONG) (m_capacity * (1 + (m_expansion_factor / 100.0)));
 			ULONG min_expand_size = m_capacity + 4;
 
 			Resize(std::max(std::max(min_expand_size, new_size), m_min_size));
@@ -301,7 +301,7 @@ public:
 	{
 		for (ULONG i = 1; i < m_size; i++)
 		{
-			if ((ULONG_PTR)(m_elems[i - 1]) > (ULONG_PTR)(m_elems[i]))
+			if ((ULONG_PTR) (m_elems[i - 1]) > (ULONG_PTR) (m_elems[i]))
 			{
 				return false;
 			}

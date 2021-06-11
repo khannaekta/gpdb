@@ -604,7 +604,7 @@ CCostContext::CostCompute(CMemoryPool *mp, CCostArray *pdrgpcostChildren)
 	ci.SetRebinds(num_rebinds);
 	GPOS_ASSERT_IMP(
 		!exprhdl.HasOuterRefs(),
-		GPOPT_DEFAULT_REBINDS == (ULONG)(num_rebinds) &&
+		GPOPT_DEFAULT_REBINDS == (ULONG) (num_rebinds) &&
 			"invalid number of rebinds when there are no outer references");
 
 	// extract children costing info
@@ -637,7 +637,7 @@ CCostContext::CostCompute(CMemoryPool *mp, CCostArray *pdrgpcostChildren)
 		ci.SetChildRebinds(ul, dRebindsChild);
 		GPOS_ASSERT_IMP(
 			!exprhdl.HasOuterRefs(ul),
-			GPOPT_DEFAULT_REBINDS == (ULONG)(dRebindsChild) &&
+			GPOPT_DEFAULT_REBINDS == (ULONG) (dRebindsChild) &&
 				"invalid number of rebinds when there are no outer references");
 
 		DOUBLE dCostChild = (*pdrgpcostChildren)[ul]->Get();

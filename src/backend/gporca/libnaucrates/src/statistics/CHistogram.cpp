@@ -2114,8 +2114,8 @@ CHistogram::ComputeSkew()
 		num2 = num2 + pow((samples[ul] - sample_mean), 2.0);
 		num3 = num3 + pow((samples[ul] - sample_mean), 3.0);
 	}
-	DOUBLE moment2 = (DOUBLE)(num2 / GPOPT_SKEW_SAMPLE_SIZE);
-	DOUBLE moment3 = (DOUBLE)(num3 / GPOPT_SKEW_SAMPLE_SIZE);
+	DOUBLE moment2 = (DOUBLE) (num2 / GPOPT_SKEW_SAMPLE_SIZE);
+	DOUBLE moment3 = (DOUBLE) (num3 / GPOPT_SKEW_SAMPLE_SIZE);
 
 	// set skew measure
 	m_skew = CDouble(1.0 + fabs(moment3 / pow(moment2, 1.5)));

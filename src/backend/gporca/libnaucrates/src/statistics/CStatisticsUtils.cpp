@@ -78,7 +78,7 @@ CStatisticsUtils::NextPoint(CMemoryPool *mp, CMDAccessor *md_accessor,
 		if (mdtype->GetDatumType() == IMDType::EtiInt2)
 		{
 			SINT sValue =
-				(SINT)(dynamic_cast<IDatumInt2 *>(datum_old)->Value() + 1);
+				(SINT) (dynamic_cast<IDatumInt2 *>(datum_old)->Value() + 1);
 			datum_new =
 				dynamic_cast<const IMDTypeInt2 *>(mdtype)->CreateInt2Datum(
 					mp, sValue, false);

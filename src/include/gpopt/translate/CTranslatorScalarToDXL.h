@@ -64,9 +64,10 @@ class CTranslatorScalarToDXL
 		const Expr *expr, const CMappingVarColId *var_colid_mapping);
 
 	// shorthand for functions for translating DXL nodes to GPDB expressions
-	typedef CDXLDatum *(DxlDatumFromDatum)(CMemoryPool *mp,
-										   const IMDType *md_type, BOOL is_null,
-										   ULONG len, Datum datum);
+	typedef CDXLDatum *(DxlDatumFromDatum) (CMemoryPool *mp,
+											const IMDType *md_type,
+											BOOL is_null, ULONG len,
+											Datum datum);
 
 private:
 	// private constructor for TranslateStandaloneExprToDXL

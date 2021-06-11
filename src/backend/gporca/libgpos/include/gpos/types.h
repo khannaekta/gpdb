@@ -29,7 +29,7 @@
 
 #define GPOS_SIZEOF(x) ((gpos::ULONG) sizeof(x))
 #define GPOS_ARRAY_SIZE(x) (GPOS_SIZEOF(x) / GPOS_SIZEOF(x[0]))
-#define GPOS_OFFSET(T, M) ((gpos::ULONG)(SIZE_T) & (((T *) 0x1)->M) - 1)
+#define GPOS_OFFSET(T, M) ((gpos::ULONG) (SIZE_T) & (((T *) 0x1)->M) - 1)
 
 /* wide character string literate */
 #define GPOS_WSZ_LIT(x) L##x
@@ -93,13 +93,13 @@ GPOS_CPL_ASSERT(8 == sizeof(LINT));
 
 enum
 {
-	int_max = ((::gpos::INT)(gpos::ulong_max >> 1)),
+	int_max = ((::gpos::INT) (gpos::ulong_max >> 1)),
 	int_min = (-gpos::int_max - 1)
 };
 
 enum
 {
-	lint_max = ((::gpos::LINT)(gpos::ullong_max >> 1)),
+	lint_max = ((::gpos::LINT) (gpos::ullong_max >> 1)),
 	lint_min = (-gpos::lint_max - 1)
 };
 
@@ -110,7 +110,7 @@ enum
 
 enum
 {
-	sint_max = ((::gpos::SINT)(gpos::usint_max >> 1)),
+	sint_max = ((::gpos::SINT) (gpos::usint_max >> 1)),
 	sint_min = (-gpos::sint_max - 1)
 };
 

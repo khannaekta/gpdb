@@ -370,7 +370,7 @@ public:
 	TEnumState
 	TesFinal() const
 	{
-		return (TEnumState)(tenumstateSentinel - 1);
+		return (TEnumState) (tenumstateSentinel - 1);
 	}
 
 	// reset state
