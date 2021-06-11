@@ -2,10 +2,10 @@
 Language:        Cpp
 AccessModifierOffset: -4
 AlignAfterOpenBracket: Align
-AlignConsecutiveMacros: false
-AlignConsecutiveAssignments: false
-AlignConsecutiveBitFields: false
-AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: None
+AlignConsecutiveAssignments: None
+AlignConsecutiveBitFields: None
+AlignConsecutiveDeclarations: None
 AlignEscapedNewlines: Left
 AlignOperands:   Align
 AlignTrailingComments: true
@@ -23,6 +23,8 @@ AlwaysBreakAfterDefinitionReturnType: All
 AlwaysBreakAfterReturnType: AllDefinitions
 AlwaysBreakBeforeMultilineStrings: true
 AlwaysBreakTemplateDeclarations: Yes
+AttributeMacros:
+  - __capability
 BinPackArguments: true
 BinPackParameters: true
 BraceWrapping:
@@ -45,6 +47,7 @@ BraceWrapping:
   SplitEmptyRecord: true
   SplitEmptyNamespace: true
 BreakBeforeBinaryOperators: None
+BreakBeforeConceptDeclarations: true
 BreakBeforeBraces: Custom
 BreakBeforeInheritanceComma: false
 BreakInheritanceList: BeforeColon
@@ -63,32 +66,41 @@ Cpp11BracedListStyle: true
 DeriveLineEnding: true
 DerivePointerAlignment: false
 DisableFormat:   false
+EmptyLineBeforeAccessModifier: LogicalBlock
 ExperimentalAutoDetectBinPacking: false
 FixNamespaceComments: true
 ForEachMacros:
   - foreach
   - Q_FOREACH
   - BOOST_FOREACH
+StatementAttributeLikeMacros:
+  - Q_EMIT
 IncludeBlocks:   Regroup
 IncludeCategories:
   - Regex:           '^<ext/.*\.h>'
     Priority:        2
     SortPriority:    0
+    CaseSensitive:   false
   - Regex:           '^<.*\.h>'
     Priority:        1
     SortPriority:    0
+    CaseSensitive:   false
   - Regex:           '^<.*'
     Priority:        2
     SortPriority:    0
+    CaseSensitive:   false
   - Regex:           '"postgres\.h"'
     Priority:        -1
     SortPriority:    0
+    CaseSensitive:   false
   - Regex:           '"gpos/.*'
     Priority:        3
     SortPriority:    0
+    CaseSensitive:   false
   - Regex:           '"(gpopt|naucrates|gpdbcost)/.*'
     Priority:        4
     SortPriority:    0
+    CaseSensitive:   false
 IncludeIsMainRegex: '([-_](test|unittest))?$'
 IncludeIsMainSourceRegex: ''
 IndentCaseLabels: true
@@ -96,6 +108,7 @@ IndentCaseBlocks: false
 IndentGotoLabels: true
 IndentPPDirectives: None
 IndentExternBlock: AfterExternBlock
+IndentRequires:  false
 IndentWidth:     4
 IndentWrappedFunctionNames: false
 InsertTrailingCommas: None
@@ -119,6 +132,7 @@ PenaltyBreakString: 1000
 PenaltyBreakTemplateDeclaration: 10
 PenaltyExcessCharacter: 1000000
 PenaltyReturnTypeOnItsOwnLine: 200
+PenaltyIndentedWhitespace: 0
 PointerAlignment: Right
 RawStringFormats:
   - Language:        Cpp
@@ -152,15 +166,18 @@ RawStringFormats:
     BasedOnStyle:    google
 ReflowComments:  false
 SortIncludes:    true
+SortJavaStaticImport: Before
 SortUsingDeclarations: true
 SpaceAfterCStyleCast: true
 SpaceAfterLogicalNot: false
 SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
 SpaceBeforeCpp11BracedList: false
 SpaceBeforeCtorInitializerColon: true
 SpaceBeforeInheritanceColon: true
 SpaceBeforeParens: ControlStatements
+SpaceAroundPointerQualifiers: Default
 SpaceBeforeRangeBasedForLoopColon: true
 SpaceInEmptyBlock: false
 SpaceInEmptyParentheses: false
@@ -172,6 +189,7 @@ SpacesInCStyleCastParentheses: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 SpaceBeforeSquareBrackets: false
+BitFieldColonSpacing: Both
 Standard:        Auto
 StatementMacros:
   - Q_UNUSED
@@ -183,5 +201,7 @@ WhitespaceSensitiveMacros:
   - STRINGIZE
   - PP_STRINGIZE
   - BOOST_PP_STRINGIZE
+  - NS_SWIFT_NAME
+  - CF_SWIFT_NAME
 ...
 
