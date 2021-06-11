@@ -27,9 +27,9 @@ using namespace gpos;
 XERCES_CPP_NAMESPACE_USE
 
 // shorthand for functions creating operator parse handlers
-typedef CParseHandlerBase *(ParseHandlerOpCreatorFunc)(CMemoryPool *mp,
-													   CParseHandlerManager *,
-													   CParseHandlerBase *);
+typedef CParseHandlerBase *(ParseHandlerOpCreatorFunc) (CMemoryPool *mp,
+														CParseHandlerManager *,
+														CParseHandlerBase *);
 
 // fwd decl
 class CDXLTokens;

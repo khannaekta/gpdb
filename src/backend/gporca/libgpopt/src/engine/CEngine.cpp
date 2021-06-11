@@ -1556,14 +1556,16 @@ CEngine::PrintActivatedXforms(IOstream &os) const
 		while (xsi.Advance())
 		{
 			CXform *pxform = CXformFactory::Pxff()->Pxf(xsi.TBit());
-			ULONG ulCalls = (ULONG)(
-				*m_pdrgpulpXformCalls)[m_ulCurrSearchStage][pxform->Exfid()];
-			ULONG ulTime = (ULONG)(
-				*m_pdrgpulpXformTimes)[m_ulCurrSearchStage][pxform->Exfid()];
-			ULONG ulBindings = (ULONG)(
-				*m_pdrgpulpXformBindings)[m_ulCurrSearchStage][pxform->Exfid()];
-			ULONG ulResults = (ULONG)(
-				*m_pdrgpulpXformResults)[m_ulCurrSearchStage][pxform->Exfid()];
+			ULONG ulCalls = (ULONG) (*m_pdrgpulpXformCalls)[m_ulCurrSearchStage]
+														   [pxform->Exfid()];
+			ULONG ulTime = (ULONG) (*m_pdrgpulpXformTimes)[m_ulCurrSearchStage]
+														  [pxform->Exfid()];
+			ULONG ulBindings =
+				(ULONG) (*m_pdrgpulpXformBindings)[m_ulCurrSearchStage]
+												  [pxform->Exfid()];
+			ULONG ulResults =
+				(ULONG) (*m_pdrgpulpXformResults)[m_ulCurrSearchStage]
+												 [pxform->Exfid()];
 			os << pxform->SzId() << ": " << ulCalls << " calls, " << ulBindings
 			   << " total bindings, " << ulResults
 			   << " alternatives generated, " << ulTime << "ms" << std::endl;
@@ -1593,10 +1595,10 @@ CEngine::OsPrintMemoryConsumption(IOstream &os, const CHAR *szHeader) const
 	   << szHeader << "Engine: ["
 	   << (DOUBLE) m_mp->TotalAllocatedSize() / GPOPT_MEM_UNIT << "] "
 	   << GPOPT_MEM_UNIT_NAME << ", MD Cache: ["
-	   << (DOUBLE)(pcache->TotalAllocatedSize()) / GPOPT_MEM_UNIT << "] "
+	   << (DOUBLE) (pcache->TotalAllocatedSize()) / GPOPT_MEM_UNIT << "] "
 	   << GPOPT_MEM_UNIT_NAME << ", Total: ["
-	   << (DOUBLE)(
-			  CMemoryPoolManager::GetMemoryPoolMgr()->TotalAllocatedSize()) /
+	   << (DOUBLE) (CMemoryPoolManager::GetMemoryPoolMgr()
+						->TotalAllocatedSize()) /
 			  GPOPT_MEM_UNIT
 	   << "] " << GPOPT_MEM_UNIT_NAME;
 
@@ -1636,7 +1638,7 @@ CEngine::ProcessTraceFlags()
 		// print optimization stats
 		at.Os() << std::endl
 				<< "[OPT]: Memo (stage " << m_ulCurrSearchStage << "): ["
-				<< (ULONG)(m_pmemo->UlpGroups()) << " groups"
+				<< (ULONG) (m_pmemo->UlpGroups()) << " groups"
 				<< ", " << m_pmemo->UlDuplicateGroups() << " duplicate groups"
 				<< ", " << m_pmemo->UlGrpExprs() << " group expressions"
 				<< ", " << m_xforms->Size() << " activated xforms]";
@@ -1681,7 +1683,7 @@ CEngine::Optimize()
 
 	const ULONG ulJobs =
 		std::min((ULONG) GPOPT_JOBS_CAP,
-				 (ULONG)(m_pmemo->UlpGroups() * GPOPT_JOBS_PER_GROUP));
+				 (ULONG) (m_pmemo->UlpGroups() * GPOPT_JOBS_PER_GROUP));
 	CJobFactory jf(m_mp, ulJobs);
 	CScheduler sched(m_mp, ulJobs);
 

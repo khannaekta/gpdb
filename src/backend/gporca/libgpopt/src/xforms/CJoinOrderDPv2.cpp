@@ -1775,7 +1775,7 @@ CJoinOrderDPv2::NChooseK(ULONG n, ULONG k)
 		denominator *= i;
 	}
 
-	return (ULONG)(numerator / denominator);
+	return (ULONG) (numerator / denominator);
 }
 
 

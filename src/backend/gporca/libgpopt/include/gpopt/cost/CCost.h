@@ -60,7 +60,7 @@ public:
 	CCost
 	operator+(const CCost &cost) const
 	{
-		CDouble d = (CDouble)(*this) + (CDouble) cost;
+		CDouble d = (CDouble) (*this) + (CDouble) cost;
 		return CCost(d);
 	}
 
@@ -68,21 +68,21 @@ public:
 	CCost
 	operator*(const CCost &cost) const
 	{
-		return CCost((CDouble)(*this) * (CDouble) cost);
+		return CCost((CDouble) (*this) * (CDouble) cost);
 	}
 
 	// comparison operator
 	BOOL
 	operator<(const CCost &cost) const
 	{
-		return (CDouble)(*this) < (CDouble) cost;
+		return (CDouble) (*this) < (CDouble) cost;
 	}
 
 	// comparison operator
 	BOOL
 	operator>(const CCost &cost) const
 	{
-		return (CDouble) cost < (CDouble)(*this);
+		return (CDouble) cost < (CDouble) (*this);
 	}
 
 	// d'tor

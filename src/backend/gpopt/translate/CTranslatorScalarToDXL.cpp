@@ -2280,7 +2280,7 @@ CTranslatorScalarToDXL::ExtractDoubleValueFromDatum(IMDId *mdid, BOOL is_null,
 
 	if (mdid->Equals(&CMDIdGPDB::m_mdid_numeric))
 	{
-		Numeric num = (Numeric)(bytes);
+		Numeric num = (Numeric) (bytes);
 
 		if (gpdb::NumericIsNan(num))
 		{
@@ -2395,7 +2395,7 @@ CTranslatorScalarToDXL::ExtractLintValueFromDatum(const IMDType *md_type,
 		Datum datumConstVal = (Datum) 0;
 		clib::Memcpy(&datumConstVal, bytes, length);
 		// Date is internally represented as an int32
-		lint_value = (LINT)(gpdb::Int32FromDatum(datumConstVal));
+		lint_value = (LINT) (gpdb::Int32FromDatum(datumConstVal));
 	}
 	else
 	{

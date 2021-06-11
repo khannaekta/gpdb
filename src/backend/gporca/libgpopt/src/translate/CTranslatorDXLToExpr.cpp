@@ -3548,8 +3548,9 @@ CTranslatorDXLToExpr::PexprScalarBooleanTest(const CDXLNode *pdxlnScBoolTest)
 	CDXLNode *child_dxlnode = (*pdxlnScBoolTest)[0];
 	CExpression *pexprChild = Pexpr(child_dxlnode);
 
-	CScalarBooleanTest::EBoolTest ebt = (CScalarBooleanTest::EBoolTest)(
-		rgulBoolTestMapping[dxl_op->GetDxlBoolTypeStr()][1]);
+	CScalarBooleanTest::EBoolTest ebt =
+		(CScalarBooleanTest::EBoolTest) (rgulBoolTestMapping
+											 [dxl_op->GetDxlBoolTypeStr()][1]);
 
 	return GPOS_NEW(m_mp) CExpression(
 		m_mp, GPOS_NEW(m_mp) CScalarBooleanTest(m_mp, ebt), pexprChild);

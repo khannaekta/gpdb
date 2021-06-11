@@ -35,7 +35,7 @@ using namespace gpos;
 class CFilterCardinalityTest
 {
 	// shorthand for functions for generating the disjunctive filter predicates
-	typedef CStatsPred *(FnPstatspredDisj)(CMemoryPool *mp);
+	typedef CStatsPred *(FnPstatspredDisj) (CMemoryPool *mp);
 
 private:
 	// triplet consisting of comparison type, double value and its byte array representation

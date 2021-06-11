@@ -450,7 +450,7 @@ CCacheTest::ULFillCacheWithoutEviction(CCache<SSimpleObject *, ULONG *> *pCache,
 		ullSizeBeforeEviction == ullExpectedCacheSize &&
 			ullSizeBeforeEviction + ullOneElemSize > ullInitialCacheSize);
 
-	return (ULONG)(ullCacheCapacity + ulKeyStart);
+	return (ULONG) (ullCacheCapacity + ulKeyStart);
 }
 
 //---------------------------------------------------------------------------
@@ -499,9 +499,9 @@ CCacheTest::CheckGenerationSanityAfterEviction(
 #endif
 
 	// total in-cache entries must be at least as many as the minimum number of in-cache entries after an eviction
-	GPOS_ASSERT(
-		uloldGenEntryCount + ulNewGenEntryCount >=
-		(ULONG)((double) ullCacheCapacity * (1 - pCache->GetEvictionFactor())));
+	GPOS_ASSERT(uloldGenEntryCount + ulNewGenEntryCount >=
+				(ULONG) ((double) ullCacheCapacity *
+						 (1 - pCache->GetEvictionFactor())));
 	// there should be at least as many new gen entries as the old gen entries as they get to live longer
 	GPOS_ASSERT(ulNewGenEntryCount >= uloldGenEntryCount);
 }

@@ -698,7 +698,7 @@ CTranslatorRelcacheToDXL::RetrieveRelDistributionCols(
 		const IMDColumn *md_col = (*mdcol_array)[ul];
 		INT attno = md_col->AttrNum();
 
-		ULONG idx = (ULONG)(GPDXL_SYSTEM_COLUMNS + attno);
+		ULONG idx = (ULONG) (GPDXL_SYSTEM_COLUMNS + attno);
 		attno_mapping[idx] = ul;
 	}
 
@@ -970,7 +970,7 @@ ULONG
 CTranslatorRelcacheToDXL::GetAttributePosition(
 	INT attno, const ULONG *GetAttributePosition)
 {
-	ULONG idx = (ULONG)(GPDXL_SYSTEM_COLUMNS + attno);
+	ULONG idx = (ULONG) (GPDXL_SYSTEM_COLUMNS + attno);
 	ULONG pos = GetAttributePosition[idx];
 	GPOS_ASSERT(gpos::ulong_max != pos);
 
@@ -1007,7 +1007,7 @@ CTranslatorRelcacheToDXL::PopulateAttnoPositionMap(CMemoryPool *mp,
 
 		INT attno = md_col->AttrNum();
 
-		ULONG idx = (ULONG)(GPDXL_SYSTEM_COLUMNS + attno);
+		ULONG idx = (ULONG) (GPDXL_SYSTEM_COLUMNS + attno);
 		GPOS_ASSERT(size > idx);
 		attno_mapping[idx] = ul;
 	}
@@ -2541,7 +2541,7 @@ CTranslatorRelcacheToDXL::ConstructAttnoMapping(CMemoryPool *mp,
 		const IMDColumn *md_col = (*mdcol_array)[ul];
 		INT attno = md_col->AttrNum();
 
-		ULONG idx = (ULONG)(GPDXL_SYSTEM_COLUMNS + attno);
+		ULONG idx = (ULONG) (GPDXL_SYSTEM_COLUMNS + attno);
 		attno_mapping[idx] = ul;
 	}
 
@@ -2636,7 +2636,7 @@ CTranslatorRelcacheToDXL::NormalizeFrequencies(float4 *freqs, ULONG length,
 
 	if (total > CDouble(1.0))
 	{
-		float4 denom = (float4)(total + CStatistics::Epsilon).Get();
+		float4 denom = (float4) (total + CStatistics::Epsilon).Get();
 
 		// divide all values by the total
 		for (ULONG ul = 0; ul < length; ul++)

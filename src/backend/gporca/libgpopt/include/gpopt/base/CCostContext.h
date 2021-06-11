@@ -227,7 +227,7 @@ public:
 	void
 	SetState(EState estNewState)
 	{
-		GPOS_ASSERT(estNewState == (EState)(m_estate + 1));
+		GPOS_ASSERT(estNewState == (EState) (m_estate + 1));
 
 		m_estate = estNewState;
 	}
