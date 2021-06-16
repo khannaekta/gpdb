@@ -2173,9 +2173,10 @@ CXformUtils::PstrErrorMessage(CMemoryPool *mp, ULONG major, ULONG minor, ...)
 CColRefArray *
 CXformUtils::PdrgpcrIndexKeys(CMemoryPool *mp, CColRefArray *colref_array,
 							  const IMDIndex *pmdindex,
-							  const IMDRelation *pmdrel)
+							  const IMDRelation *pmdrel,
+							  const IMDRelation *pmdindexrel)
 {
-	return PdrgpcrIndexColumns(mp, colref_array, pmdindex, pmdrel, EicKey);
+	return PdrgpcrIndexColumns(mp, colref_array, pmdindex, pmdrel, pmdindexrel, EicKey);
 }
 
 //---------------------------------------------------------------------------
@@ -2189,9 +2190,9 @@ CXformUtils::PdrgpcrIndexKeys(CMemoryPool *mp, CColRefArray *colref_array,
 //---------------------------------------------------------------------------
 CColRefSet *
 CXformUtils::PcrsIndexKeys(CMemoryPool *mp, CColRefArray *colref_array,
-						   const IMDIndex *pmdindex, const IMDRelation *pmdrel)
+						   const IMDIndex *pmdindex, const IMDRelation *pmdrel, const IMDRelation *pmdindexrel)
 {
-	return PcrsIndexColumns(mp, colref_array, pmdindex, pmdrel, EicKey);
+	return PcrsIndexColumns(mp, colref_array, pmdindex, pmdrel, pmdindexrel, EicKey);
 }
 
 //---------------------------------------------------------------------------
@@ -2206,9 +2207,10 @@ CXformUtils::PcrsIndexKeys(CMemoryPool *mp, CColRefArray *colref_array,
 CColRefSet *
 CXformUtils::PcrsIndexIncludedCols(CMemoryPool *mp, CColRefArray *colref_array,
 								   const IMDIndex *pmdindex,
-								   const IMDRelation *pmdrel)
+								   const IMDRelation *pmdrel,
+								   const IMDRelation *pmdindexrel)
 {
-	return PcrsIndexColumns(mp, colref_array, pmdindex, pmdrel, EicIncluded);
+	return PcrsIndexColumns(mp, colref_array, pmdindex, pmdrel, pmdindexrel, EicIncluded);
 }
 
 //---------------------------------------------------------------------------
@@ -2223,11 +2225,12 @@ CXformUtils::PcrsIndexIncludedCols(CMemoryPool *mp, CColRefArray *colref_array,
 CColRefSet *
 CXformUtils::PcrsIndexColumns(CMemoryPool *mp, CColRefArray *colref_array,
 							  const IMDIndex *pmdindex,
-							  const IMDRelation *pmdrel, EIndexCols eic)
+							  const IMDRelation *pmdrel,
+							  const IMDRelation *pmdindexrel, EIndexCols eic)
 {
 	GPOS_ASSERT(EicKey == eic || EicIncluded == eic);
 	CColRefArray *pdrgpcrIndexColumns =
-		PdrgpcrIndexColumns(mp, colref_array, pmdindex, pmdrel, eic);
+		PdrgpcrIndexColumns(mp, colref_array, pmdindex, pmdrel, pmdindexrel, eic);
 	CColRefSet *pcrsCols = GPOS_NEW(mp) CColRefSet(mp, pdrgpcrIndexColumns);
 
 	pdrgpcrIndexColumns->Release();
@@ -2247,7 +2250,8 @@ CXformUtils::PcrsIndexColumns(CMemoryPool *mp, CColRefArray *colref_array,
 CColRefArray *
 CXformUtils::PdrgpcrIndexColumns(CMemoryPool *mp, CColRefArray *colref_array,
 								 const IMDIndex *pmdindex,
-								 const IMDRelation *pmdrel, EIndexCols eic)
+								 const IMDRelation *pmdrel,
+								 const IMDRelation *pmdindexrel, EIndexCols eic)
 {
 	GPOS_ASSERT(EicKey == eic || EicIncluded == eic);
 
@@ -2264,11 +2268,11 @@ CXformUtils::PdrgpcrIndexColumns(CMemoryPool *mp, CColRefArray *colref_array,
 		ULONG ulPos = gpos::ulong_max;
 		if (EicIncluded == eic)
 		{
-			ulPos = pmdindex->IncludedColAt(ul);
+			ulPos = pmdindexrel->NonDroppedColAt(pmdindex->IncludedColAt(ul));
 		}
 		else
 		{
-			ulPos = pmdindex->KeyAt(ul);
+			ulPos = pmdindexrel->NonDroppedColAt(pmdindex->KeyAt(ul));
 		}
 		ULONG ulPosNonDropped = pmdrel->NonDroppedColAt(ulPos);
 
@@ -2294,6 +2298,7 @@ CXformUtils::PdrgpcrIndexColumns(CMemoryPool *mp, CColRefArray *colref_array,
 BOOL
 CXformUtils::FIndexApplicable(CMemoryPool *mp, const IMDIndex *pmdindex,
 							  const IMDRelation *pmdrel,
+							  const IMDRelation *pmdindexrel,
 							  CColRefArray *pdrgpcrOutput, CColRefSet *pcrsReqd,
 							  CColRefSet *pcrsScalar,
 							  IMDIndex::EmdindexType emdindtype,
@@ -2333,9 +2338,9 @@ CXformUtils::FIndexApplicable(CMemoryPool *mp, const IMDIndex *pmdindex,
 	BOOL fApplicable = true;
 
 	CColRefSet *pcrsIncludedCols =
-		CXformUtils::PcrsIndexIncludedCols(mp, pdrgpcrOutput, pmdindex, pmdrel);
+		CXformUtils::PcrsIndexIncludedCols(mp, pdrgpcrOutput, pmdindex, pmdrel, pmdindexrel);
 	CColRefSet *pcrsIndexCols =
-		CXformUtils::PcrsIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel);
+		CXformUtils::PcrsIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel, pmdindexrel);
 	if (!pcrsIncludedCols->ContainsAll(pcrsReqd) ||	 // index is not covering
 		pcrsScalar->IsDisjoint(
 			pcrsIndexCols))	 // indexing columns disjoint from the columns used in the scalar expression
@@ -2858,7 +2863,7 @@ CXformUtils::PexprBuildIndexPlan(
 			GPOS_NEW(mp) CWStringConst(mp, popGet->Name().Pstr()->GetBuffer());
 	}
 
-	if (!FIndexApplicable(mp, pmdindex, pmdrel, pdrgpcrOutput, pcrsReqd,
+	if (!FIndexApplicable(mp, pmdindex, pmdrel, md_accessor->RetrieveRel(pmdindex->MDId_Rel()), pdrgpcrOutput, pcrsReqd,
 						  pcrsScalarExpr, emdindtype))
 	{
 		GPOS_DELETE(alias);
@@ -2868,7 +2873,7 @@ CXformUtils::PexprBuildIndexPlan(
 	}
 
 	CColRefArray *pdrgppcrIndexCols =
-		PdrgpcrIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel);
+		PdrgpcrIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel, md_accessor->RetrieveRel(pmdindex->MDId_Rel()));
 	CExpressionArray *pdrgpexprIndex = GPOS_NEW(mp) CExpressionArray(mp);
 	CExpressionArray *pdrgpexprResidual = GPOS_NEW(mp) CExpressionArray(mp);
 	CPredicateUtils::ExtractIndexPredicates(
@@ -3268,13 +3273,23 @@ CXformUtils::PexprBitmapSelectBestIndex(
 	}
 
 	const ULONG ulIndexes = pmdrel->IndexCount();
+//    const IMDRelation *original_pmdrel = pmdrel;
 	for (ULONG ul = 0; ul < ulIndexes; ul++)
 	{
 		const IMDIndex *pmdindex =
 			md_accessor->RetrieveIndex(pmdrel->IndexMDidAt(ul));
+        const IMDRelation *index_rel = md_accessor->RetrieveRel(pmdindex->MDId_Rel());
+//        if(index_rel->HasDroppedColumns() != pmdrel->HasDroppedColumns())
+//        {
+//            for (ULONG ul = 0; ul < index_rel->; ul++)
+//            pmdrel = index_rel;
+//        }
+//        else{
+//            pmdrel = original_pmdrel;
+//        }
 
 		if (!pmdrel->IsPartialIndex(pmdindex->MDId()) &&
-			CXformUtils::FIndexApplicable(mp, pmdindex, pmdrel, pdrgpcrOutput,
+			CXformUtils::FIndexApplicable(mp, pmdindex, pmdrel, index_rel, pdrgpcrOutput,
 										  pcrsReqd, pcrsScalar,
 										  IMDIndex::EmdindBitmap, altIndexType))
 		{
@@ -3282,7 +3297,7 @@ CXformUtils::PexprBitmapSelectBestIndex(
 			CExpressionArray *pdrgpexprScalar =
 				CPredicateUtils::PdrgpexprConjuncts(mp, pexprPred);
 			CColRefArray *pdrgpcrIndexCols =
-				PdrgpcrIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel);
+				PdrgpcrIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel, index_rel);
 			CExpressionArray *pdrgpexprIndex =
 				GPOS_NEW(mp) CExpressionArray(mp);
 			CExpressionArray *pdrgpexprResidual =
@@ -3335,7 +3350,7 @@ CXformUtils::PexprBitmapSelectBestIndex(
 			}
 
 			CColRefArray *indexColumns = CXformUtils::PdrgpcrIndexKeys(
-				mp, pdrgpcrOutput, pmdindex, pmdrel);
+				mp, pdrgpcrOutput, pmdindex, pmdrel, index_rel);
 
 			// make sure the first key of index is included in the scalar predicate
 			const CColRef *pcrFirstIndexKey = (*indexColumns)[0];
@@ -3886,7 +3901,7 @@ CXformUtils::PdrgpdrgppartdigCandidates(
 			md_accessor->RetrieveIndex(pmdrel->IndexMDidAt(ul));
 
 		if (!CXformUtils::FIndexApplicable(
-				mp, pmdindex, pmdrel, pdrgpcrOutput, pcrsReqd, pcrsScalarExpr,
+				mp, pmdindex, pmdrel, md_accessor->RetrieveRel(pmdindex->MDId_Rel()), pdrgpcrOutput, pcrsReqd, pcrsScalarExpr,
 				IMDIndex::EmdindBtree /*emdindtype*/) ||
 			!pmdrel->IsPartialIndex(pmdindex->MDId()))
 		{
@@ -3973,7 +3988,7 @@ CXformUtils::PpartcnstrUpdateCovered(
 	}
 
 	CColRefArray *pdrgpcrIndexCols =
-		PdrgpcrIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel);
+		PdrgpcrIndexKeys(mp, pdrgpcrOutput, pmdindex, pmdrel, md_accessor->RetrieveRel(pmdindex->MDId_Rel()));
 	CPredicateUtils::ExtractIndexPredicates(
 		mp, md_accessor, pdrgpexprScalar, pmdindex, pdrgpcrIndexCols,
 		pdrgpexprIndex, pdrgpexprResidual, pcrsAcceptedOuterRefs);
@@ -4106,7 +4121,7 @@ CXformUtils::PexprPartialDynamicIndexGet(
 	GPOS_ASSERT(pmdrel->IsPartialIndex(pmdindex->MDId()));
 
 	CColRefArray *pdrgpcrIndexCols =
-		PdrgpcrIndexKeys(mp, popGet->PdrgpcrOutput(), pmdindex, pmdrel);
+		PdrgpcrIndexKeys(mp, popGet->PdrgpcrOutput(), pmdindex, pmdrel, pmdrel);
 
 	UlongToColRefMap *colref_mapping = NULL;
 

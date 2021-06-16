@@ -33,6 +33,7 @@ using namespace gpmd;
 //
 //---------------------------------------------------------------------------
 CMDIndexGPDB::CMDIndexGPDB(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
+                           IMDId *mdid_rel,
 						   BOOL is_clustered, IMDIndex::EmdindexType index_type,
 						   IMDId *mdid_item_type,
 						   ULongPtrArray *index_key_cols_array,
@@ -42,6 +43,7 @@ CMDIndexGPDB::CMDIndexGPDB(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
 	: m_mp(mp),
 	  m_mdid(mdid),
 	  m_mdname(mdname),
+      m_rel_mdid(mdid_rel),
 	  m_clustered(is_clustered),
 	  m_index_type(index_type),
 	  m_mdid_item_type(mdid_item_type),
@@ -102,6 +104,11 @@ CMDIndexGPDB::MDId() const
 	return m_mdid;
 }
 
+IMDId *
+CMDIndexGPDB::MDId_Rel() const
+{
+    return m_rel_mdid;
+}
 //---------------------------------------------------------------------------
 //	@function:
 //		CMDIndexGPDB::Mdname
@@ -283,6 +290,10 @@ CMDIndexGPDB::Serialize(CXMLSerializer *xml_serializer) const
 					  CDXLTokens::GetDXLTokenStr(EdxltokenMdid));
 	xml_serializer->AddAttribute(CDXLTokens::GetDXLTokenStr(EdxltokenName),
 								 m_mdname->GetMDName());
+//    xml_serializer->AddAttribute(
+//            CDXLTokens::GetDXLTokenStr(EdxltokenRelationMdid), GetDXLStr());
+    m_rel_mdid->Serialize(
+            xml_serializer, CDXLTokens::GetDXLTokenStr(EdxltokenRelationMdid));
 	xml_serializer->AddAttribute(
 		CDXLTokens::GetDXLTokenStr(EdxltokenIndexClustered), m_clustered);
 

@@ -32,6 +32,8 @@ private:
 	// is the index partial
 	BOOL m_is_partial;
 
+
+
 public:
 	// ctor
 	CMDIndexInfo(IMDId *mdid, BOOL is_partial);

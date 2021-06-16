@@ -170,6 +170,7 @@ private:
 										CColRefArray *colref_array,
 										const IMDIndex *pmdindex,
 										const IMDRelation *pmdrel,
+										const IMDRelation *pmdindexrel,
 										EIndexCols eic);
 
 	// return the ordered array of columns from the given array of columns which appear
@@ -178,6 +179,7 @@ private:
 											 CColRefArray *colref_array,
 											 const IMDIndex *pmdindex,
 											 const IMDRelation *pmdrel,
+											 const IMDRelation *pmdindexrel,
 											 EIndexCols eic);
 
 	// lookup join keys in scalar child group
@@ -505,26 +507,30 @@ public:
 	static CColRefArray *PdrgpcrIndexKeys(CMemoryPool *mp,
 										  CColRefArray *colref_array,
 										  const IMDIndex *pmdindex,
-										  const IMDRelation *pmdrel);
+										  const IMDRelation *pmdrel,
+										  const IMDRelation *pmdindexrel);
 
 	// return the set of key columns from the given array of columns which appear
 	// in the index key columns
 	static CColRefSet *PcrsIndexKeys(CMemoryPool *mp,
 									 CColRefArray *colref_array,
 									 const IMDIndex *pmdindex,
-									 const IMDRelation *pmdrel);
+									 const IMDRelation *pmdrel,
+									 const IMDRelation *pmdindexrel);
 
 	// return the set of key columns from the given array of columns which appear
 	// in the index included columns
 	static CColRefSet *PcrsIndexIncludedCols(CMemoryPool *mp,
 											 CColRefArray *colref_array,
 											 const IMDIndex *pmdindex,
-											 const IMDRelation *pmdrel);
+											 const IMDRelation *pmdrel,
+											 const IMDRelation *pmdindexrel);
 
 	// check if an index is applicable given the required, output and scalar
 	// expression columns
 	static BOOL FIndexApplicable(
 		CMemoryPool *mp, const IMDIndex *pmdindex, const IMDRelation *pmdrel,
+        const IMDRelation *pmdindexrel,
 		CColRefArray *pdrgpcrOutput, CColRefSet *pcrsReqd,
 		CColRefSet *pcrsScalar, IMDIndex::EmdindexType emdindtype,
 		IMDIndex::EmdindexType altindtype = IMDIndex::EmdindSentinel);

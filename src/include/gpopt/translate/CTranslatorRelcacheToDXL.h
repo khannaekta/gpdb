@@ -310,7 +310,8 @@ private:
 											CMDAccessor *md_accessor,
 											IMDId *mdid_index,
 											const IMDRelation *md_rel,
-											LogicalIndexes *logical_indexes);
+											LogicalIndexes *logical_indexes,
+                                            bool populateColsFromIndRel);
 
 	// lookup an index given its id from the logical indexes structure
 	static LogicalIndexInfo *LookupLogicalIndexById(
@@ -321,7 +322,8 @@ private:
 											CMDAccessor *md_accessor,
 											LogicalIndexInfo *index_info,
 											IMDId *mdid_index,
-											const IMDRelation *md_rel);
+											const IMDRelation *md_rel,
+                                            bool populateColsFromIndRel);
 
 	// return the triggers defined on the given relation
 	static IMdIdArray *RetrieveRelTriggers(CMemoryPool *mp, Relation rel);

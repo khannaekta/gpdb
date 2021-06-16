@@ -251,6 +251,13 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 														   Relation root_rel)
 {
 	CMDIndexInfoArray *md_index_info_array = GPOS_NEW(mp) CMDIndexInfoArray(mp);
+//    CMDIndexInfoArray *md_index_info_array_root = RetrieveRelIndexInfoForNonPartTable(mp, root_rel);
+//
+//    for(int i =0; i < md_index_info_array_root->Size(); i++)
+//    {
+//        CMDIndexInfo *md_index_info_root = (*md_index_info_array_root)[i];
+//        md_index_info_array->Append(md_index_info_root);
+//    }
 
 	// root of partitioned table: aggregate index information across different parts
 	List *plLogicalIndexInfo = RetrievePartTableIndexInfo(root_rel);
@@ -284,6 +291,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 				CMDIdGPDB *mdid_index = GPOS_NEW(mp) CMDIdGPDB(index_oid);
 				BOOL is_partial = (NULL != logicalIndexInfo->partCons) ||
 								  (NIL != logicalIndexInfo->defaultLevels);
+
 				CMDIndexInfo *md_index_info =
 					GPOS_NEW(mp) CMDIndexInfo(mdid_index, is_partial);
 				md_index_info_array->Append(md_index_info);
@@ -1043,7 +1051,8 @@ CTranslatorRelcacheToDXL::RetrieveIndex(CMemoryPool *mp,
 	CMDName *mdname = NULL;
 	IMDIndex::EmdindexType index_type = IMDIndex::EmdindSentinel;
 	IMDId *mdid_item_type = NULL;
-	bool index_clustered = false;
+    IMDId *mdid_index_rel = NULL;
+    bool index_clustered = false;
 	ULongPtrArray *index_key_cols_array = NULL;
 	ULONG *attno_mapping = NULL;
 
@@ -1060,10 +1069,13 @@ CTranslatorRelcacheToDXL::RetrieveIndex(CMemoryPool *mp,
 		index_clustered = form_pg_index->indisclustered;
 
 		OID rel_oid = form_pg_index->indrelid;
+		bool populateColsFromIndRel = false;
+        mdid_index_rel = GPOS_NEW(mp) CMDIdGPDB(rel_oid);
 
 		if (gpdb::IsLeafPartition(rel_oid))
 		{
 			rel_oid = gpdb::GetRootPartition(rel_oid);
+            populateColsFromIndRel = true;
 		}
 
 		CMDIdGPDB *mdid_rel = GPOS_NEW(mp) CMDIdGPDB(rel_oid);
@@ -1077,7 +1089,7 @@ CTranslatorRelcacheToDXL::RetrieveIndex(CMemoryPool *mp,
 			GPOS_ASSERT(NULL != logical_indexes);
 
 			IMDIndex *index = RetrievePartTableIndex(
-				mp, md_accessor, mdid_index, md_rel, logical_indexes);
+				mp, md_accessor, mdid_index, md_rel, logical_indexes, populateColsFromIndRel);
 
 			// cleanup
 			gpdb::GPDBFree(logical_indexes);
@@ -1145,7 +1157,7 @@ CTranslatorRelcacheToDXL::RetrieveIndex(CMemoryPool *mp,
 	IMdIdArray *op_families_mdids = RetrieveIndexOpFamilies(mp, mdid_index);
 
 	CMDIndexGPDB *index = GPOS_NEW(mp) CMDIndexGPDB(
-		mp, mdid_index, mdname, index_clustered, index_type, mdid_item_type,
+		mp, mdid_index, mdname, md_rel->MDId(), index_clustered, index_type, mdid_item_type,
 		index_key_cols_array, included_cols, op_families_mdids,
 		NULL  // mdpart_constraint
 	);
@@ -1166,7 +1178,7 @@ CTranslatorRelcacheToDXL::RetrieveIndex(CMemoryPool *mp,
 IMDIndex *
 CTranslatorRelcacheToDXL::RetrievePartTableIndex(
 	CMemoryPool *mp, CMDAccessor *md_accessor, IMDId *mdid_index,
-	const IMDRelation *md_rel, LogicalIndexes *logical_indexes)
+	const IMDRelation *md_rel, LogicalIndexes *logical_indexes, bool populateColsFromIndRel)
 {
 	GPOS_ASSERT(NULL != logical_indexes);
 	GPOS_ASSERT(0 < logical_indexes->numLogicalIndexes);
@@ -1180,7 +1192,7 @@ CTranslatorRelcacheToDXL::RetrievePartTableIndex(
 	}
 
 	return RetrievePartTableIndex(mp, md_accessor, index_info, mdid_index,
-								  md_rel);
+								  md_rel, populateColsFromIndRel);
 }
 
 //---------------------------------------------------------------------------
@@ -1226,7 +1238,8 @@ CTranslatorRelcacheToDXL::RetrievePartTableIndex(CMemoryPool *mp,
 												 CMDAccessor *md_accessor,
 												 LogicalIndexInfo *index_info,
 												 IMDId *mdid_index,
-												 const IMDRelation *md_rel)
+												 const IMDRelation *md_rel,
+												 bool populateColsFromIndRel)
 {
 	OID index_oid = index_info->logicalIndexOid;
 
@@ -1248,6 +1261,7 @@ CTranslatorRelcacheToDXL::RetrievePartTableIndex(CMemoryPool *mp,
 	// get the index name
 	GPOS_ASSERT(NULL != index_rel->rd_index);
 	Form_pg_index form_pg_index = index_rel->rd_index;
+    CMDIdGPDB *mdid_index_rel = GPOS_NEW(mp) CMDIdGPDB(form_pg_index->indrelid);
 
 	CHAR *index_name = NameStr(index_rel->rd_rel->relname);
 	CMDName *mdname = CDXLUtils::CreateMDNameFromCharArray(mp, index_name);
@@ -1257,10 +1271,24 @@ CTranslatorRelcacheToDXL::RetrievePartTableIndex(CMemoryPool *mp,
 	Relation table = gpdb::GetRelation(rel_oid);
 	ULONG size = GPDXL_SYSTEM_COLUMNS + (ULONG) table->rd_att->natts + 1;
 	gpdb::CloseRelation(table);
+    ULONG *attno_mapping = PopulateAttnoPositionMap(mp, md_rel, size);
 
-	ULONG *attno_mapping = PopulateAttnoPositionMap(mp, md_rel, size);
-
-	ULongPtrArray *included_cols = ComputeIncludedCols(mp, md_rel);
+    ULongPtrArray *included_cols = ComputeIncludedCols(mp, md_rel);
+//	if (populateColsFromIndRel){
+//        OID att_oid = form_pg_index->indrelid;
+//        Relation table = gpdb::GetRelation(att_oid);
+//        ULONG size = GPDXL_SYSTEM_COLUMNS + (ULONG) table->rd_att->natts + 1;
+//        gpdb::CloseRelation(table);
+//
+//        CMDIdGPDB *mdid_rel = GPOS_NEW(mp) CMDIdGPDB(att_oid);
+//
+//        const IMDRelation *new_md_rel = NULL;
+//        new_md_rel = md_accessor->RetrieveRel(mdid_rel);
+////        attno_mapping = PopulateAttnoPositionMap(mp, new_md_rel, size);
+//
+//        included_cols = ComputeIncludedCols(mp, new_md_rel);
+//
+//	}
 
 	// extract the position of the key columns
 	ULongPtrArray *index_key_cols_array = GPOS_NEW(mp) ULongPtrArray(mp);
@@ -1377,7 +1405,7 @@ CTranslatorRelcacheToDXL::RetrievePartTableIndex(CMemoryPool *mp,
 	IMdIdArray *pdrgpmdidOpFamilies = RetrieveIndexOpFamilies(mp, mdid_index);
 
 	CMDIndexGPDB *index = GPOS_NEW(mp)
-		CMDIndexGPDB(mp, mdid_index, mdname, form_pg_index->indisclustered,
+		CMDIndexGPDB(mp, mdid_index, mdname, md_rel->MDId(), form_pg_index->indisclustered,
 					 index_type, mdid_item_type, index_key_cols_array,
 					 included_cols, pdrgpmdidOpFamilies, mdpart_constraint);
 

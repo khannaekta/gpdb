@@ -54,6 +54,8 @@ public:
 		return EmdtInd;
 	}
 
+    virtual IMDId *MDId_Rel() const = 0;
+
 	// is the index clustered
 	virtual BOOL IsClustered() const = 0;
 

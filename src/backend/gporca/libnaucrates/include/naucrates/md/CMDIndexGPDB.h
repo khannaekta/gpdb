@@ -46,6 +46,9 @@ private:
 	// table name
 	CMDName *m_mdname;
 
+    // index rel_mdid
+    IMDId *m_rel_mdid;
+
 	// is the index clustered
 	BOOL m_clustered;
 
@@ -75,8 +78,8 @@ private:
 
 public:
 	// ctor
-	CMDIndexGPDB(CMemoryPool *mp, IMDId *mdid, CMDName *mdname,
-				 BOOL is_clustered, EmdindexType index_type,
+	CMDIndexGPDB(CMemoryPool *mp, IMDId *mdid, CMDName *mdname, IMDId *mdid_rel,
+                 BOOL is_clustered, EmdindexType index_type,
 				 IMDId *mdid_item_type, ULongPtrArray *index_key_cols_array,
 				 ULongPtrArray *included_cols_array,
 				 IMdIdArray *mdid_opfamilies_array,
@@ -90,6 +93,9 @@ public:
 
 	// index name
 	virtual CMDName Mdname() const;
+
+    // index mdid_rel
+    virtual IMDId *MDId_Rel() const;
 
 	// is the index clustered
 	virtual BOOL IsClustered() const;

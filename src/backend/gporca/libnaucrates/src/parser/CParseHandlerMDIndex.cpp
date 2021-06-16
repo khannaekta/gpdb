@@ -37,6 +37,7 @@ CParseHandlerMDIndex::CParseHandlerMDIndex(
 	: CParseHandlerMetadataObject(mp, parse_handler_mgr, parse_handler_root),
 	  m_mdid(NULL),
 	  m_mdname(NULL),
+      m_rel_mdid(NULL),
 	  m_clustered(false),
 	  m_index_type(IMDIndex::EmdindSentinel),
 	  m_mdid_item_type(NULL),
@@ -131,6 +132,17 @@ CParseHandlerMDIndex::StartElement(const XMLCh *const,	// element_uri,
 		m_parse_handler_mgr->GetDXLMemoryManager(), attrs,
 		EdxltokenIndexClustered, EdxltokenIndex);
 
+//    const XMLCh *xmlszRelationMdid =
+//            attrs.getValue(CDXLTokens::XmlstrToken(EdxltokenRelationMdid));
+//    if (NULL != xmlszRelationMdid)
+//    {
+//        m_rel_mdid = CDXLOperatorFactory::MakeMdIdFromStr(
+//                m_parse_handler_mgr->GetDXLMemoryManager(), xmlszRelationMdid,
+//                EdxltokenRelationMdid, EdxltokenIndex);
+//    }
+    m_rel_mdid = CDXLOperatorFactory::ExtractConvertAttrValueToMdId(
+            m_parse_handler_mgr->GetDXLMemoryManager(), attrs, EdxltokenRelationMdid,
+            EdxltokenIndex);
 	m_index_type = CDXLOperatorFactory::ParseIndexType(attrs);
 	const XMLCh *xmlszItemType =
 		attrs.getValue(CDXLTokens::XmlstrToken(EdxltokenIndexItemType));
@@ -207,7 +219,7 @@ CParseHandlerMDIndex::EndElement(const XMLCh *const,  // element_uri,
 	mdid_opfamilies_array->AddRef();
 
 	m_imd_obj = GPOS_NEW(m_mp) CMDIndexGPDB(
-		m_mp, m_mdid, m_mdname, m_clustered, m_index_type, m_mdid_item_type,
+		m_mp, m_mdid, m_mdname, m_rel_mdid, m_clustered, m_index_type, m_mdid_item_type,
 		m_index_key_cols_array, m_included_cols_array, mdid_opfamilies_array,
 		m_part_constraint);
 
