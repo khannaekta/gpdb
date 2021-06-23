@@ -125,6 +125,10 @@ private:
 	// oids of any external partitions (for partitioned tables only)
 	IMdIdArray *m_external_partitions;
 
+	// table does not support index scan if it is a partition table with
+	// mismatched underlying column layout between root and leaf for index columns, otherwise true
+	BOOL m_supports_index_scan;
+
 	// private copy ctor
 	CMDRelationGPDB(const CMDRelationGPDB &);
 

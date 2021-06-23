@@ -30,6 +30,7 @@
 #include "naucrates/exception.h"
 extern "C" {
 #include "catalog/pg_collation.h"
+#include "catalog/pg_inherits_fn.h"
 #include "utils/memutils.h"
 }
 #define GP_WRAP_START                                            \
@@ -2677,6 +2678,7 @@ gpdb::MakeGpPolicy(GpPolicyType ptype, int nattrs, int numsegments)
 	GP_WRAP_END;
 }
 
+
 uint32
 gpdb::HashChar(Datum d)
 {
@@ -2727,6 +2729,17 @@ gpdb::UUIDHash(Datum d)
 	GP_WRAP_END;
 }
 
+List *
+gpdb::GetChildParts(Relation rel)
+{
+	GP_WRAP_START;
+	{
+		return find_all_inheritors(rel->rd_id, NoLock, NULL);
+	}
+	GP_WRAP_END;
+	return NIL;
+}
+
 void *
 gpdb::GPDBMemoryContextAlloc(MemoryContext context, Size size)
 {
@@ -2761,5 +2774,6 @@ gpdb::GPDBAllocSetContextCreate()
 	GP_WRAP_END;
 	return NULL;
 }
+
 
 // EOF
