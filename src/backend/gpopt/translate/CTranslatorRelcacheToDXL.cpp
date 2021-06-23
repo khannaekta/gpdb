@@ -301,8 +301,9 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 				CMDIdGPDB *mdid_index = GPOS_NEW(mp) CMDIdGPDB(index_oid);
 				BOOL is_partial = (NULL != logicalIndexInfo->partCons) ||
 								  (NIL != logicalIndexInfo->defaultLevels);
+                BOOL has_mismatched_indexcols = true; // TODO_MISMATCH: check if this has mismatched index cols
 				CMDIndexInfo *md_index_info =
-					GPOS_NEW(mp) CMDIndexInfo(mdid_index, is_partial);
+					GPOS_NEW(mp) CMDIndexInfo(mdid_index, is_partial, has_mismatched_indexcols);
 				md_index_info_array->Append(md_index_info);
 			}
 
@@ -356,7 +357,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForNonPartTable(CMemoryPool *mp,
 				CMDIdGPDB *mdid_index = GPOS_NEW(mp) CMDIdGPDB(index_oid);
 				// for a regular table, external table or leaf partition, an index is always complete
 				CMDIndexInfo *md_index_info = GPOS_NEW(mp)
-					CMDIndexInfo(mdid_index, false /* is_partial */);
+					CMDIndexInfo(mdid_index, false /* is_partial */, false /* mismatched index cols */); // TODO_MISMATCH: validate
 				md_index_info_array->Append(md_index_info);
 			}
 

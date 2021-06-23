@@ -17,8 +17,10 @@ using namespace gpdxl;
 using namespace gpmd;
 
 // ctor
-CMDIndexInfo::CMDIndexInfo(IMDId *mdid, BOOL is_partial)
-	: m_mdid(mdid), m_is_partial(is_partial)
+CMDIndexInfo::CMDIndexInfo(IMDId *mdid, BOOL is_partial, BOOL indexcols_mismatch_rootcols)
+	: m_mdid(mdid),
+	  m_is_partial(is_partial),
+	  m_indexcols_mismatch_rootcols(indexcols_mismatch_rootcols)
 {
 	GPOS_ASSERT(mdid->IsValid());
 }
@@ -41,6 +43,13 @@ BOOL
 CMDIndexInfo::IsPartial() const
 {
 	return m_is_partial;
+}
+
+// has mismatched index columns layout between root and leaf
+BOOL
+CMDIndexInfo::HasMismatchedIndexCols() const
+{
+    return m_indexcols_mismatch_rootcols;
 }
 
 // serialize indexinfo in DXL format
