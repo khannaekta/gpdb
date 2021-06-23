@@ -259,7 +259,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 
 	List *child_oids = gpdb::GetChildParts(root_rel);
 
-	Bitmapset *root_index_bitmap = root_rel->rd_indexattr;
+	Bitmapset *root_index_bitmap = RelationGetIndexAttrBitmap(root_rel, INDEX_ATTR_BITMAP_ALL);
 	ForEach(lc, plLogicalIndexInfo)
 	{
 		LogicalIndexInfo *logicalIndexInfo = (LogicalIndexInfo *) lfirst(lc);
@@ -270,7 +270,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 		{
 			Oid oidChild = lfirst_oid(lc_child);
 			Relation rel_child = gpdb::GetRelation(oidChild);
-			Bitmapset *child_index_bitmap = rel_child->rd_indexattr;
+			Bitmapset *child_index_bitmap = RelationGetIndexAttrBitmap(rel_child, INDEX_ATTR_BITMAP_ALL);
 			if (!bms_equal(root_index_bitmap, child_index_bitmap))
 			{
 				gpdb::CloseRelation(rel_child);
