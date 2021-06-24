@@ -2858,7 +2858,7 @@ CXformUtils::PexprBuildIndexPlan(
 			GPOS_NEW(mp) CWStringConst(mp, popGet->Name().Pstr()->GetBuffer());
 	}
 
-	if (!pmdrel->IsIndexWithMismatchedIndexCols(pmdindex->MDId()) &&
+	if (pmdrel->IsIndexWithMismatchedIndexCols(pmdindex->MDId()) ||
         !FIndexApplicable(mp, pmdindex, pmdrel, pdrgpcrOutput, pcrsReqd,
 						  pcrsScalarExpr, emdindtype))
 	{
@@ -3887,7 +3887,7 @@ CXformUtils::PdrgpdrgppartdigCandidates(
 		const IMDIndex *pmdindex =
 			md_accessor->RetrieveIndex(pmdrel->IndexMDidAt(ul));
 
-		if (!pmdrel->IsIndexWithMismatchedIndexCols(pmdindex->MDId()) ||
+		if (pmdrel->IsIndexWithMismatchedIndexCols(pmdindex->MDId()) ||
             !CXformUtils::FIndexApplicable(
 				mp, pmdindex, pmdrel, pdrgpcrOutput, pcrsReqd, pcrsScalarExpr,
 				IMDIndex::EmdindBtree /*emdindtype*/) ||

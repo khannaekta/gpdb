@@ -73,7 +73,7 @@ CParseHandlerMDIndexInfoList::StartElement(
 			EdxltokenIndexPartial, EdxltokenIndexInfo);
 
 		CMDIndexInfo *md_index_info =
-			GPOS_NEW(m_mp) CMDIndexInfo(mdid, is_partial, false); // TODO_MISMATCH: pass has mismatched index cols
+			GPOS_NEW(m_mp) CMDIndexInfo(mdid, is_partial, true); // TODO_MISMATCH: pass has mismatched index cols
 		m_mdindex_info_array->Append(md_index_info);
 	}
 	else
