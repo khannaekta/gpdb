@@ -265,7 +265,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 		LogicalIndexInfo *logicalIndexInfo = (LogicalIndexInfo *) lfirst(lc);
 		OID index_oid = logicalIndexInfo->logicalIndexOid;
 		ListCell *lc_child = NULL;
-		BOOL index_valid = true;
+		BOOL has_mismatched_indexcols = false;
 		ForEach(lc_child, child_oids)
 		{
 			Oid oidChild = lfirst_oid(lc_child);
@@ -274,7 +274,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForPartTable(CMemoryPool *mp,
 			if (!bms_equal(root_index_bitmap, child_index_bitmap))
 			{
 				gpdb::CloseRelation(rel_child);
-				index_valid = false;
+				has_mismatched_indexcols = true;
 				break;
 			}
 			gpdb::CloseRelation(rel_child);
@@ -357,7 +357,7 @@ CTranslatorRelcacheToDXL::RetrieveRelIndexInfoForNonPartTable(CMemoryPool *mp,
 				CMDIdGPDB *mdid_index = GPOS_NEW(mp) CMDIdGPDB(index_oid);
 				// for a regular table, external table or leaf partition, an index is always complete
 				CMDIndexInfo *md_index_info = GPOS_NEW(mp)
-					CMDIndexInfo(mdid_index, false /* is_partial */, false /* mismatched index cols */); // TODO_MISMATCH: validate
+					CMDIndexInfo(mdid_index, false /* is_partial */, false /* mismatched index cols */);
 				md_index_info_array->Append(md_index_info);
 			}
 
