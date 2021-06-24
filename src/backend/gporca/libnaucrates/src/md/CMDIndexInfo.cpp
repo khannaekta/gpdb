@@ -65,7 +65,10 @@ CMDIndexInfo::Serialize(gpdxl::CXMLSerializer *xml_serializer) const
 	xml_serializer->AddAttribute(
 		CDXLTokens::GetDXLTokenStr(EdxltokenIndexPartial), m_is_partial);
 
-	xml_serializer->CloseElement(
+    xml_serializer->AddAttribute(
+            CDXLTokens::GetDXLTokenStr(EdxltokenIndexMismatchedCols), m_indexcols_mismatch_rootcols);
+
+    xml_serializer->CloseElement(
 		CDXLTokens::GetDXLTokenStr(EdxltokenNamespacePrefix),
 		CDXLTokens::GetDXLTokenStr(EdxltokenIndexInfo));
 }
