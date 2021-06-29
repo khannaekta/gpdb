@@ -1577,13 +1577,21 @@ logicalIndexInfoForIndexOid(Oid rootOid, Oid indexOid)
 
 	/* remap expression fields */
 	/* map the attrnos if necessary */
+//    int j = 0;
 	if (attMap)
 	{
 		for (int i = 0; i < plogicalIndexInfo->nColumns; i++)
 		{
 			if (plogicalIndexInfo->indexKeys[i] != 0)
 			{
+//			    if (i == 1){
+//                    plogicalIndexInfo->indexKeys[i] = 3;//attMap[(plogicalIndexInfo->indexKeys[i])];
+//			    }
+//			    else{
+
 				plogicalIndexInfo->indexKeys[i] = attMap[(plogicalIndexInfo->indexKeys[i]) - 1];
+//			    }
+
 			}
 		}
 		change_varattnos_of_a_node((Node *) plogicalIndexInfo->indExprs, attMap);
