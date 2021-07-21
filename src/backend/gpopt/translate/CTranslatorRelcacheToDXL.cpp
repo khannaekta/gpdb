@@ -208,8 +208,13 @@ CTranslatorRelcacheToDXL::GetRelName(CMemoryPool *mp, Relation rel)
 {
 	GPOS_ASSERT(NULL != rel);
 	CHAR *relname = NameStr(rel->rd_rel->relname);
-	CWStringDynamic *relname_str =
-		CDXLUtils::CreateDynamicStringFromCharArray(mp, relname);
+//	CWStringDynamic *relname_str =
+//		CDXLUtils::CreateDynamicStringFromCharArray(mp, relname);
+    WCHAR w_str_buf_static[GPOS_WSTR_DYNAMIC_STATIC_BUFFER];
+    int res = gpdb::CHAR2WCHAR(w_str_buf_static, GPOS_ARRAY_SIZE(w_str_buf_static), relname, sizeof(relname));
+
+	CWStringDynamic *relname_str = GPOS_NEW(mp) CWStringDynamic(mp, w_str_buf_static);
+//		CDXLUtils::CreateDynamicStringFromCharArray(mp, relname);
 	CMDName *mdname = GPOS_NEW(mp) CMDName(mp, relname_str);
 	GPOS_DELETE(relname_str);
 	return mdname;

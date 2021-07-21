@@ -22,6 +22,7 @@ extern "C" {
 #include "parser/parse_coerce.h"
 #include "utils/faultinjector.h"
 #include "utils/lsyscache.h"
+#include "utils/pg_locale.h"
 }
 
 #include "gpos/types.h"
@@ -630,6 +631,8 @@ int FindNodes(Node *node, List *nodeTags);
 // GPDB_91_MERGE_FIXME: collation
 // look for nodes with non-default collation; returns 1 if any exist, -1 otherwise
 int CheckCollation(Node *node);
+
+unsigned int CHAR2WCHAR(wchar_t *to, size_t tolen, const char *from, size_t fromlen);
 
 Node *CoerceToCommonType(ParseState *pstate, Node *node, Oid target_type,
 						 const char *context);

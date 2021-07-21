@@ -2280,6 +2280,26 @@ gpdb::CheckCollation(Node *node)
 	return -1;
 }
 
+unsigned int
+gpdb::CHAR2WCHAR(wchar_t *to, size_t tolen, const char *from, size_t fromlen)
+{
+    GP_WRAP_START;
+            {
+                if (lc_ctype_is_c(DEFAULT_COLLATION_OID))
+                {
+                    return pg_mb2wchar_with_len(from, (pg_wchar *) to, fromlen);
+                }
+                else
+                {
+                    pg_locale_t locale = pg_newlocale_from_collation(DEFAULT_COLLATION_OID);
+                    return char2wchar(to, tolen, from, fromlen, locale);
+                }
+
+            }
+    GP_WRAP_END;
+    return 0;
+}
+
 Node *
 gpdb::CoerceToCommonType(ParseState *pstate, Node *node, Oid target_type,
 						 const char *context)
