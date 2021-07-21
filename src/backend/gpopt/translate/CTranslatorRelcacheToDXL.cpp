@@ -707,8 +707,13 @@ CTranslatorRelcacheToDXL::RetrieveRelColumns(
 	for (ULONG ul = 0; ul < (ULONG) rel->rd_att->natts; ul++)
 	{
 		Form_pg_attribute att = rel->rd_att->attrs[ul];
-		CMDName *md_colname =
-			CDXLUtils::CreateMDNameFromCharArray(mp, NameStr(att->attname));
+//		CMDName *md_colname =
+//			CDXLUtils::CreateMDNameFromCharArray(mp, NameStr(att->attname));
+        WCHAR w_str_buf_static[GPOS_WSTR_DYNAMIC_STATIC_BUFFER];
+        CHAR *relattname = NameStr(att->attname);
+        int res = gpdb::CHAR2WCHAR(w_str_buf_static, GPOS_ARRAY_SIZE(w_str_buf_static), relattname, sizeof(relattname));
+        CWStringDynamic *relattname_str = GPOS_NEW(mp) CWStringDynamic(mp, w_str_buf_static);
+        CMDName *md_colname = GPOS_NEW(mp) CMDName(mp, relattname_str);
 
 		// translate the default column value
 		CDXLNode *dxl_default_col_val = NULL;
